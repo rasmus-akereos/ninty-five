@@ -86,3 +86,21 @@ def test_evaluate_records_odds_and_returns_previous(client):
     body = {"dataset": "EUROPE", "home": "A", "away": "B", "match_key": "fd:1", "odds": {"1": 2.7}}
     assert client.post("/api/evaluate", json=body).json()["last_odds"] == {}
     assert client.post("/api/evaluate", json=body).json()["last_odds"]["1"]["odds"] == 2.7
+
+
+def test_track_record_endpoint(client):
+    h = app_mod.history
+    row = {**_row(), "kickoff": "2026-11-01T20:00:00+00:00"}
+    h.save_board([row], "2026-11-01T10:00:00+00:00")
+    h.record_odds("fd:1", "EUROPE", "A", "B",
+                  [{"market": m, "odds": o} for m, o in (("1", 2.5), ("X", 3.2), ("2", 3.0))],
+                  "2026-11-01T12:00:00+00:00")
+    h.set_result("fd:1", 2, 1, "FINISHED")
+    app_mod.store.add({"dataset": "EUROPE", "home": "A", "away": "B", "market": "1", "odds": 2.5, "stake": 10,
+                       "match_key": "fd:1"})
+    r = client.get("/api/track-record").json()
+    assert r["summary"]["1X2"]["n"] == 1 and r["summary"]["1X2"]["n_compared"] == 1
+    [m] = r["matches"]
+    assert m["result"] == "2-1" and m["bets"] == ["1 @ 2.50"]
+    assert m["model"]["1"] == 0.5 and m["market"]["1"] == pytest.approx(0.38, abs=0.02)
+    assert client.get("/api/track-record?competition=Spain").json()["matches"] == []

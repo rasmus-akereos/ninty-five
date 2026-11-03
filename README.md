@@ -43,11 +43,28 @@ with the buttons above the list. Click a match to **fold it open** right under
 its row and type the real odds: each box shows its minimum odds and turns green
 when the price is worth betting, and the edge and stake update as you type.
 Club bets logged from the board **settle automatically** once the result is
-in (90-minute score); national-team bets are settled by hand.
+in (90-minute score). National-team bets settle automatically too, except
+after extra time with an own goal, where you settle by hand.
 
 National-team fixtures come from ESPN's public scoreboard data (no key needed).
 It is an unofficial, undocumented feed, so it can change without notice; if it
 fails, the board still shows the club matches with a warning.
+
+### History and track record
+
+The board is kept between visits: opening the page shows the last fetch at
+once, and it refreshes by itself once it is more than 6 hours old (or when you
+click *Fetch matches*). Every fetch stores a snapshot of every match on the
+board (the model's prices and both teams' last five results, shown as form in
+the fold-down), and every Danske Spil price you type is stored too. Reopening
+a match shows your last prices as grey hints under empty boxes, so a stale
+price never produces a stake. Results are fetched automatically, which also
+settles national-team bets.
+
+The **Track record** section compares the model and Danske Spil on finished
+matches: log loss (lower is better), how often each gave the actual result
+more probability, and whether the model's percentages come true about as often
+as it says.
 
 The first fetch downloads three seasons (~27 requests). The free tier allows
 10 requests a minute, so expect about 3 minutes. After that only the current

@@ -218,3 +218,37 @@ class HistoryStore:
         with self._conn() as c:
             c.execute("UPDATE matches SET home_goals = ?, away_goals = ?, status = ? WHERE key = ?",
                       (hg, ag, status, key))
+
+    # ------------------------------------------------------- track record
+    def finished(self, competition: str | None = None) -> list[dict]:
+        """Matches with a result and a snapshot taken before kick-off, newest
+        first, each with that last pre-kick-off snapshot's probabilities and
+        the last typed price per market before kick-off."""
+        sql = "SELECT * FROM matches WHERE home_goals IS NOT NULL"
+        args: tuple = ()
+        if competition:
+            sql += " AND competition = ?"
+            args = (competition,)
+        out = []
+        with self._conn() as c:
+            for m in c.execute(sql, args).fetchall():
+                kickoff = pd.Timestamp(m["kickoff"])
+                snaps = c.execute(
+                    "SELECT taken_at, probabilities FROM snapshots WHERE match_key = ? ORDER BY id", (m["key"],)
+                ).fetchall()
+                before = [s for s in snaps if pd.Timestamp(s["taken_at"]) < kickoff]
+                if not before:
+                    continue
+                odds: dict[str, float] = {}
+                for e in c.execute(
+                    "SELECT market, odds, entered_at FROM odds_entries WHERE match_key = ? ORDER BY id", (m["key"],)
+                ):
+                    if pd.Timestamp(e["entered_at"]) < kickoff:
+                        odds[e["market"]] = e["odds"]
+                out.append({
+                    "key": m["key"], "dataset": m["dataset"], "competition": m["competition"],
+                    "detail": m["detail"], "kickoff": m["kickoff"], "home": m["home"], "away": m["away"],
+                    "hg": m["home_goals"], "ag": m["away_goals"],
+                    "probabilities": json.loads(before[-1]["probabilities"]), "odds": odds,
+                })
+        return sorted(out, key=lambda x: pd.Timestamp(x["kickoff"]), reverse=True)

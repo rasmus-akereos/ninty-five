@@ -111,6 +111,12 @@ tr.fold > td { text-align: left; white-space: normal; background: var(--accent-b
   </section>
 
   <section>
+    <h2>Track record</h2>
+    <p class="muted" id="track-info">How the model and Danske Spil did on finished board matches. Uses the league selected above.</p>
+    <div id="track"></div>
+  </section>
+
+  <section>
     <h2>Bet log</h2>
     <div class="kpis" id="kpis"></div>
     <div class="scroll"><table id="bets"></table></div>
@@ -207,6 +213,7 @@ async function refreshBoard() {
     const warn = (r.warnings || []).length ? ` ⚠ ${r.warnings.join(" · ")}` : "";
     setBoard(r, settled + warn);
     if (settled) loadBets();
+    loadTrack();
   } catch (e) { $("board-info").textContent = e.message; }
   finally { refreshing = false; }
 }
@@ -229,7 +236,7 @@ function renderChips() {
   $("chips").innerHTML = board.length ? names.map(n =>
     `<button class="chip${n === league ? " active" : ""}" data-league="${esc(n)}">${esc(n)}<span class="n">${n === "All" ? board.length : counts[n]}</span></button>`).join("") : "";
   document.querySelectorAll("#chips .chip").forEach(b => b.onclick = () => {
-    league = b.dataset.league; store.set("league", league);
+    league = b.dataset.league; store.set("league", league); loadTrack();
     if (open && open.fixture && league !== "All" && open.fixture.competition !== league) open = null;
     renderBoard();
   });
@@ -416,6 +423,42 @@ async function loadTeams(ds) {
   } catch (e) { if ($("f-info")) $("f-info").textContent = e.message; }
 }
 
+// ---------------------------------------------------------- track record
+const GROUP_NAMES = { "1X2": "1X2", "OU25": "Over/Under 2.5" };
+
+async function loadTrack() {
+  let r;
+  try { r = await api(`/api/track-record${league === "All" ? "" : `?competition=${encodeURIComponent(league)}`}`); }
+  catch (e) { $("track").innerHTML = `<div class="note">${esc(e.message)}</div>`; return; }
+  const s1 = r.summary["1X2"];
+  $("track-info").textContent = `How the model and Danske Spil did on finished board matches${league === "All" ? "" : ` (${league})`}. ` +
+    "Log loss: lower is better. Closer: which of the two gave the actual result more probability.";
+  if (!s1.n) {
+    $("track").innerHTML = `<p class="muted">No finished matches yet. Results appear here after the matches you've seen on the board are played.</p>`;
+    return;
+  }
+  const tiles = Object.entries(r.summary).map(([g, s]) => [
+    [`${GROUP_NAMES[g]}: matches`, s.n],
+    [`${GROUP_NAMES[g]}: model log loss`, num(s.model_logloss, 3)],
+    [`${GROUP_NAMES[g]}: with your odds (n=${s.n_compared})`, s.n_compared
+      ? `model ${num(s.model_logloss_compared, 3)} · DS ${num(s.market_logloss_compared, 3)}` : "–"],
+    [`${GROUP_NAMES[g]}: closer`, s.n_compared
+      ? `model ${pct(s.model_closer, 0)} · DS ${pct(s.market_closer, 0)}` : "–"],
+  ]).flat().map(([k, v]) => `<div class="kpi"><span>${k}</span><b style="font-size:15px">${v}</b></div>`).join("");
+  const calib = `<details style="margin:8px 0"><summary>Calibration (1X2): does "40%" happen about 40% of the time?</summary>
+    <div class="scroll"><table style="margin-top:8px"><tr><th>Model said</th><th>Outcomes</th><th>Average forecast</th><th>Actually happened</th></tr>
+    ${s1.calibration.filter(b => b.n).map(b => `<tr><td>${pct(b.lo, 0)}–${pct(b.hi, 0)}</td><td>${b.n}</td><td>${pct(b.avg_pred)}</td><td>${pct(b.freq)}</td></tr>`).join("")}
+    </table></div></details>`;
+  const p3 = o => o ? `${pct(o["1"], 0)} / ${pct(o["X"], 0)} / ${pct(o["2"], 0)}` : "–";
+  const matches = `<div class="scroll"><table>
+    <tr><th>Kick-off</th><th>Match</th><th>Result</th><th>Model 1/X/2</th><th>Danske Spil 1/X/2</th><th>Your bets</th></tr>
+    ${r.matches.map(m => `<tr><td>${new Date(m.kickoff).toLocaleDateString([], { day: "2-digit", month: "short" })}</td>
+      <td>${esc(m.home)} – ${esc(m.away)}</td><td>${m.result}</td><td>${p3(m.model)}</td><td>${p3(m.market)}</td>
+      <td>${m.bets.map(esc).join(", ") || "–"}</td></tr>`).join("")}
+  </table></div>`;
+  $("track").innerHTML = `<div class="kpis">${tiles}</div>${calib}${matches}`;
+}
+
 // --------------------------------------------------------------- bet log
 async function logBet(s) {
   const target = open, f = target.fixture;
@@ -477,6 +520,7 @@ $("days").addEventListener("change", () => +$("days").value > fetchedDays ? refr
 api("/api/datasets").then(ds => { datasets = ds; }).catch(() => {});
 renderBoard();
 initBoard();
+loadTrack();
 loadBets();
 </script>
 </body>

@@ -11,11 +11,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import fixtures, service
+from . import fixtures, service, track
 from .model import DixonColes, markets
 from .history import HistoryStore
 from .store import BetStore
-from .value import Settings, evaluate, overround
+from .value import Settings, evaluate, market_probabilities, overround
 
 STATIC = Path(__file__).resolve().parent / "static"
 
@@ -117,6 +117,27 @@ def refresh_fixture_board(days: int = 7, min_edge: float = 0.08) -> dict:
     except Exception as exc:
         raise HTTPException(502, f"Could not fetch fixtures: {exc}") from exc
     return {**_stored_board(days, min_edge), "warnings": out["warnings"], "auto_settled": out["auto_settled"]}
+
+
+@app.get("/api/track-record")
+def track_record(competition: str | None = None) -> dict:
+    """Model vs Danske Spil vs result on finished board matches."""
+    matches = history.finished(competition or None)
+    bets_by_key: dict[str, list[str]] = {}
+    for b in store.list():
+        if b.get("match_key"):
+            bets_by_key.setdefault(b["match_key"], []).append(f"{b['market']} @ {b['odds']:.2f}")
+    recent = []
+    for m in matches[:50]:
+        market = market_probabilities({k: v for k, v in m["odds"].items() if k in ("1", "X", "2")})
+        recent.append({
+            "kickoff": m["kickoff"], "competition": m["competition"], "detail": m["detail"],
+            "home": m["home"], "away": m["away"], "result": f"{m['hg']}-{m['ag']}",
+            "model": {k: m["probabilities"].get(k) for k in ("1", "X", "2")},
+            "market": {k: market[k] for k in ("1", "X", "2")} if "1" in market else None,
+            "bets": bets_by_key.get(m["key"], []),
+        })
+    return {"summary": track.summary(matches), "matches": recent}
 
 
 @app.get("/api/teams")

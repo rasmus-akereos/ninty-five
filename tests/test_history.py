@@ -86,3 +86,19 @@ def test_results_ignores_cancelled(tmp_path):
     assert [p["key"] for p in h.pending_results(NOW)] == ["fd:2"]
     h.set_result("fd:2", 2, 1, "FINISHED")
     assert h.pending_results(NOW) == []
+
+
+def test_finished_uses_last_snapshot_and_odds_before_kickoff(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    ko = "2026-11-01T20:00:00+00:00"
+    h.save_board([_row(key="fd:1", kickoff=ko, p1=0.40)], "2026-11-01T10:00:00+00:00")
+    h.save_board([_row(key="fd:1", kickoff=ko, p1=0.60)], "2026-11-01T21:00:00+00:00")   # after kick-off
+    h.record_odds("fd:1", "EUROPE", "A", "B", [_sel("1", 2.5)], "2026-11-01T12:00:00+00:00")
+    h.record_odds("fd:1", "EUROPE", "A", "B", [_sel("1", 2.9)], "2026-11-01T20:30:00+00:00")
+    h.record_odds(None, "EUROPE", "A", "B", [_sel("X", 3.3)], "2026-11-01T12:00:00+00:00")  # manual: excluded
+    assert h.finished() == []  # no result yet
+    h.set_result("fd:1", 1, 0, "FINISHED")
+    [m] = h.finished()
+    assert m["probabilities"]["1"] == pytest.approx(0.40) and m["odds"] == {"1": 2.5}
+    assert (m["hg"], m["ag"]) == (1, 0) and m["competition"] == "England 2"
+    assert h.finished(competition="Spain") == []
