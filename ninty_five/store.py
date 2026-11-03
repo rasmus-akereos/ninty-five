@@ -30,10 +30,11 @@ CREATE TABLE IF NOT EXISTS bets (
     status TEXT NOT NULL DEFAULT 'open',  -- open | won | lost | void
     pnl REAL,
     match_id INTEGER,  -- football-data.org id, enables auto-settlement
-    kickoff TEXT
+    kickoff TEXT,
+    match_key TEXT     -- board match key (fd:/espn:), enables auto-settlement
 );
 """
-MIGRATIONS = {"match_id": "INTEGER", "kickoff": "TEXT"}
+MIGRATIONS = {"match_id": "INTEGER", "kickoff": "TEXT", "match_key": "TEXT"}
 
 
 class BetStore:
@@ -53,7 +54,7 @@ class BetStore:
         return conn
 
     def add(self, bet: dict) -> int:
-        fields = ["dataset", "home", "away", "market", "odds", "stake", "p_model", "p_blend", "ev", "match_id", "kickoff"]
+        fields = ["dataset", "home", "away", "market", "odds", "stake", "p_model", "p_blend", "ev", "match_id", "kickoff", "match_key"]
         values = [bet.get(f) for f in fields]
         with self._conn() as c:
             cur = c.execute(
@@ -132,3 +133,13 @@ class BetStore:
             "avg_clv": round(sum(clv) / len(clv), 4) if clv else None,
             "n_clv": len(clv),
         }
+
+    def auto_settle_keys(self, results: dict[str, tuple[int, int]]) -> list[int]:
+        """Settle open bets by board match key; `results` maps key -> 90-minute
+        (home goals, away goals). Returns settled ids."""
+        settled = []
+        for b in self.list():
+            if b["status"] == "open" and b["match_key"] in results:
+                self.settle(b["id"], *results[b["match_key"]])
+                settled.append(b["id"])
+        return settled

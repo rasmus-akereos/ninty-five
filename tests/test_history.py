@@ -75,3 +75,14 @@ def test_manual_match_odds_keyed_by_teams(tmp_path):
     assert h.last_odds(None, "INTL", "Denmark", "Scotland")["Over 2.5"]["odds"] == 2.1
     assert h.last_odds(None, "INTL", "Scotland", "Denmark") == {}
     assert h.last_odds("fd:1", "INTL", "Denmark", "Scotland") == {}  # keyed lookups ignore manual rows
+
+
+def test_results_ignores_cancelled(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    h.save_board([_row(key="espn:9", kickoff="2026-11-01T20:00:00+00:00"),
+                  _row(key="fd:2", kickoff="2026-11-02T20:00:00+00:00"),
+                  _row(key="fd:3", kickoff="2026-10-01T20:00:00+00:00")], "t")   # older than 14 days
+    h.set_result("espn:9", None, None, "STATUS_CANCELED")
+    assert [p["key"] for p in h.pending_results(NOW)] == ["fd:2"]
+    h.set_result("fd:2", 2, 1, "FINISHED")
+    assert h.pending_results(NOW) == []

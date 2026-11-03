@@ -201,3 +201,20 @@ class HistoryStore:
                 )
                 written += 1
         return written
+
+    # ------------------------------------------------------------ results
+    def pending_results(self, now: pd.Timestamp, lookback_days: int = 14) -> list[dict]:
+        """Matches that kicked off within the look-back window, have no result
+        yet and weren't called off."""
+        start = now - pd.Timedelta(days=lookback_days)
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT key, dataset, kickoff FROM matches WHERE home_goals IS NULL AND status IS NULL"
+            ).fetchall()
+        out = [dict(r) for r in rows if start <= pd.Timestamp(r["kickoff"]) < now]
+        return sorted(out, key=lambda r: pd.Timestamp(r["kickoff"]))
+
+    def set_result(self, key: str, hg: int | None, ag: int | None, status: str) -> None:
+        with self._conn() as c:
+            c.execute("UPDATE matches SET home_goals = ?, away_goals = ?, status = ? WHERE key = ?",
+                      (hg, ag, status, key))

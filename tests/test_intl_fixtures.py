@@ -74,3 +74,31 @@ def test_board_keeps_clubs_when_intl_source_fails(monkeypatch):
     monkeypatch.setattr(service, "intl_board", broken)
     rows, warnings = service.board()
     assert len(rows) == 1 and "ESPN down" in warnings[0]
+
+
+def _goal(team_id, display, own=False):
+    return {"scoringPlay": True, "shootout": False, "ownGoal": own, "team": {"id": team_id},
+            "clock": {"displayValue": display}}
+
+
+def test_goals_90_espn_aet():
+    ev = {"status": {"type": {"name": "STATUS_FINAL_AET"}}, "competitions": [{
+        "competitors": [{"homeAway": "home", "team": {"id": "1"}, "score": "2"},
+                        {"homeAway": "away", "team": {"id": "2"}, "score": "1"}],
+        "details": [_goal("1", "30'"), _goal("2", "90'+2'"), _goal("1", "105'"),
+                    {"scoringPlay": True, "shootout": True, "team": {"id": "1"}, "clock": {"displayValue": "120'"}}]}]}
+    assert intl_fixtures.goals_90(ev) == (1, 1)
+    ev["competitions"][0]["details"].append(_goal("2", "60'", own=True))
+    assert intl_fixtures.goals_90(ev) is None  # own-goal attribution unverified: no result
+
+
+def test_goals_90_full_time_uses_score():
+    assert intl_fixtures.goals_90(SAMPLE["events"][1]) == (0, 0)  # Azerbaijan 0-0 Liechtenstein
+    assert intl_fixtures.goals_90(SAMPLE["events"][0]) is None    # still scheduled
+
+
+def test_results_returns_finished_and_cancelled(monkeypatch):
+    monkeypatch.setattr(intl_fixtures, "_get", lambda slug, month: SAMPLE if slug == "uefa.nations" else {"events": []})
+    df = intl_fixtures.results(since=pd.Timestamp("2026-09-25T00:00Z"), now=pd.Timestamp("2026-11-03T12:00Z"))
+    assert list(df.event_id) == ["401861093"] and (df.hg[0], df.ag[0]) == (0, 0)
+    assert df.status[0] == "STATUS_FULL_TIME"

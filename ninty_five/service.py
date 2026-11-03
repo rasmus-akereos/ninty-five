@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 
@@ -16,6 +17,7 @@ MODEL_TTL_SECONDS = 6 * 3600
 
 _models: dict[str, tuple[float, DixonColes, pd.DataFrame]] = {}
 _lock = threading.Lock()
+log = logging.getLogger("ninty_five")
 
 
 def datasets() -> dict[str, str]:
@@ -172,8 +174,42 @@ def board(days: int = 7, min_edge: float = 0.08) -> tuple[list[dict], list[str]]
 
 
 def update_results(history, bets, now: pd.Timestamp) -> list[int]:
-    """Fetch results for finished board matches and settle bets."""
-    return bets.auto_settle(results_frame())
+    """Fetch 90-minute results for board matches that have kicked off (last 14
+    days), store them, and settle open bets. Each source is best effort."""
+    pending = history.pending_results(now)
+    found: dict[str, tuple[int, int]] = {}
+    settled: list[int] = []
+
+    try:  # clubs (football-data.org allows at most 10 days per call)
+        club = results_frame(days=10)
+        settled += bets.auto_settle(club)  # bets logged before match keys existed
+        by_id = {int(r.match_id): (int(r.hg), int(r.ag)) for r in club.itertuples()}
+        for p in pending:
+            if p["key"].startswith("fd:") and int(p["key"][3:]) in by_id:
+                found[p["key"]] = by_id[int(p["key"][3:])]
+                history.set_result(p["key"], *found[p["key"]], "FINISHED")
+    except Exception as exc:
+        log.warning("club results unavailable: %s", exc)
+
+    intl = [p for p in pending if p["key"].startswith("espn:")]
+    if intl:
+        try:
+            since = min(pd.Timestamp(p["kickoff"]) for p in intl)
+            res = {r.event_id: r for r in intl_fixtures.results(since, now).itertuples()}
+            for p in intl:
+                r = res.get(p["key"][5:])
+                if r is None:
+                    continue
+                if r.status in intl_fixtures.CALLED_OFF:
+                    history.set_result(p["key"], None, None, r.status)
+                elif pd.notna(r.hg) and pd.notna(r.ag):
+                    found[p["key"]] = (int(r.hg), int(r.ag))
+                    history.set_result(p["key"], *found[p["key"]], r.status)
+        except Exception as exc:
+            log.warning("national-team results unavailable: %s", exc)
+
+    settled += bets.auto_settle_keys(found)
+    return sorted(set(settled))
 
 
 def refresh_board(history, bets, days: int, now: pd.Timestamp | None = None) -> dict:

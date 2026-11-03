@@ -158,3 +158,79 @@ def upcoming(days: int = 7, now: pd.Timestamp | None = None) -> pd.DataFrame:
     df = pd.concat(frames, ignore_index=True).drop_duplicates("event_id")
     df = df[df["status"].isin(SCHEDULED) & (df["kickoff"] >= now) & (df["kickoff"] < end)]
     return df.sort_values("kickoff").reset_index(drop=True)
+
+
+# ------------------------------------------------------------------ results
+FULL_TIME = "STATUS_FULL_TIME"
+EXTRA_TIME = {"STATUS_FINAL_AET", "STATUS_FINAL_PEN"}
+CALLED_OFF = {"STATUS_CANCELED", "STATUS_POSTPONED", "STATUS_ABANDONED"}
+
+
+def _minute(display: str) -> int | None:
+    """"90'+3'" -> 90, "105'" -> 105."""
+    head = (display or "").split("'")[0].strip()
+    return int(head) if head.isdigit() else None
+
+
+def goals_90(event: dict) -> tuple[int, int] | None:
+    """90-minute score of a finished event, or None if it isn't finished or
+    can't be determined safely. Bets settle on 90 minutes, but ESPN's score
+    includes extra time, so for AET/penalty games count goals up to 90'+.
+    Own goals in those games are skipped entirely (None): which side ESPN
+    credits them to is unverified, and no result beats a wrong one."""
+    status = ((event.get("status") or {}).get("type") or {}).get("name", "")
+    comp = (event.get("competitions") or [{}])[0]
+    sides = {c.get("homeAway"): c for c in comp.get("competitors", [])}
+    if "home" not in sides or "away" not in sides:
+        return None
+    if status == FULL_TIME:
+        try:
+            return int(sides["home"]["score"]), int(sides["away"]["score"])
+        except (KeyError, TypeError, ValueError):
+            return None
+    if status not in EXTRA_TIME:
+        return None
+    team_side = {sides["home"]["team"]["id"]: 0, sides["away"]["team"]["id"]: 1}
+    goals = [0, 0]
+    for d in comp.get("details", []):
+        if not d.get("scoringPlay") or d.get("shootout"):
+            continue
+        minute = _minute((d.get("clock") or {}).get("displayValue", ""))
+        if minute is None:
+            return None
+        if minute > 90:
+            continue
+        if d.get("ownGoal"):
+            return None
+        side = team_side.get((d.get("team") or {}).get("id"))
+        if side is None:
+            return None
+        goals[side] += 1
+    return goals[0], goals[1]
+
+
+def results(since: pd.Timestamp, now: pd.Timestamp | None = None) -> pd.DataFrame:
+    """Finished or called-off national-team events between `since` and `now`:
+    event_id, hg, ag (90 minutes; NaN when undetermined), status."""
+    now = now or pd.Timestamp.now(tz="UTC")
+    rows, errors, ok = [], [], False
+    for slug in SLUGS:
+        for month in _months(since, now):
+            try:
+                payload = _get(slug, month)
+            except Exception as exc:
+                errors.append(f"{slug} {month}: {exc}")
+                continue
+            ok = True
+            for e in payload.get("events", []):
+                kickoff = pd.Timestamp(e["date"])
+                status = ((e.get("status") or {}).get("type") or {}).get("name", "")
+                if not (since <= kickoff <= now) or status not in {FULL_TIME, *EXTRA_TIME, *CALLED_OFF}:
+                    continue
+                g = goals_90(e)
+                rows.append({"event_id": str(e["id"]), "hg": g[0] if g else None, "ag": g[1] if g else None,
+                             "status": status})
+    if not ok:
+        raise RuntimeError("Could not load national-team results from ESPN: " + "; ".join(errors[:3]))
+    df = pd.DataFrame(rows, columns=["event_id", "hg", "ag", "status"])
+    return df.drop_duplicates("event_id").reset_index(drop=True)
