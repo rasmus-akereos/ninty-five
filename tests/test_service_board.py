@@ -93,12 +93,13 @@ def test_build_board_lower_league_failure_is_warning(monkeypatch):
     assert warnings == ["Lower-league fixtures unavailable: down"]
 
 
-def test_build_board_raises_only_when_all_three_fail(monkeypatch):
+def test_build_board_raises_only_when_all_sources_fail(monkeypatch):
     monkeypatch.setattr(service, "club_board", _fail)
     monkeypatch.setattr(service, "intl_board", _fail)
+    monkeypatch.setattr(service, "cup_board", _fail)
     monkeypatch.setattr(service, "league_board", _ok("fdcu:x"))
     rows, warnings = service.build_board(7)
-    assert [r["key"] for r in rows] == ["fdcu:x"] and len(warnings) == 2
+    assert [r["key"] for r in rows] == ["fdcu:x"] and len(warnings) == 3
     monkeypatch.setattr(service, "league_board", _fail)
     with pytest.raises(RuntimeError):
         service.build_board(7)
@@ -117,7 +118,7 @@ def _store_fdcu(tmp_path, kickoff):
 
 def _no_other_sources(monkeypatch):
     monkeypatch.setattr(fixtures, "recent_results", lambda days=7: pd.DataFrame(columns=["match_id", "hg", "ag"]))
-    monkeypatch.setattr(intl_fixtures, "results", lambda since, now=None: pd.DataFrame(
+    monkeypatch.setattr(intl_fixtures, "results", lambda since, now=None, slugs=None: pd.DataFrame(
         columns=["event_id", "hg", "ag", "status"]))
 
 
@@ -215,3 +216,51 @@ def test_update_results_fdcu_ignores_earlier_meeting(tmp_path, monkeypatch):
         columns=["date", "home", "away", "hg", "ag", "neutral", "competition"]))
     assert service.update_results(h, bets, pd.Timestamp("2026-11-09T07:00Z")) == []
     assert bets.list()[0]["status"] == "open"
+
+
+# --------------------------------------------------------------------- cups
+from ninty_five import cup_fixtures  # noqa: E402
+
+
+def test_cup_board_prices_with_country_model_and_passes_warnings(monkeypatch):
+    model, df = _eng_model()
+    monkeypatch.setattr(service, "_cached", lambda key, refresh=False: (0, model, df))
+    fx = pd.DataFrame([{"key": "espn:1", "dataset": "ENG", "competition": "FA Cup",
+                        "kickoff": pd.Timestamp("2026-11-07 15:00", tz="UTC"), "home": "Wigan", "away": "Bolton",
+                        "neutral": True}])
+    monkeypatch.setattr(cup_fixtures, "upcoming", lambda days, now=None: (fx, ["FA Cup: no model team for X"]))
+    rows, warnings = service.cup_board(7)
+    r = rows[0]
+    assert r["key"] == "espn:1" and r["competition"] == "FA Cup" and r["rated"] and r["neutral"] is True
+    assert warnings == ["FA Cup: no model team for X"]
+
+
+def test_build_board_includes_cup_source_and_its_warnings(monkeypatch):
+    monkeypatch.setattr(service, "club_board", lambda days: [])
+    monkeypatch.setattr(service, "intl_board", lambda days: [])
+    monkeypatch.setattr(service, "league_board", lambda days: [])
+    monkeypatch.setattr(service, "cup_board", lambda days: (
+        [{"key": "espn:1", "kickoff": "2026-11-07T15:00:00+00:00", "competition": "FA Cup"}], ["cup warn"]))
+    rows, warnings = service.build_board(7)
+    assert [r["key"] for r in rows] == ["espn:1"] and warnings == ["cup warn"]
+
+
+def test_update_results_settles_cup_bets_from_espn(tmp_path, monkeypatch):
+    db = tmp_path / "b.sqlite"
+    h, bets = HistoryStore(db), BetStore(db)
+    h.save_board([{"key": "espn:77", "dataset": "ENG", "match_id": None, "kickoff": "2026-11-07T15:00:00+00:00",
+                   "competition": "FA Cup", "detail": "", "stage": "", "home": "Wigan", "away": "Bolton",
+                   "neutral": False, "rated": False}], "t")
+    bid = bets.add({"dataset": "ENG", "home": "Wigan", "away": "Bolton", "market": "X", "odds": 3.4, "stake": 10,
+                    "match_key": "espn:77"})
+    monkeypatch.setattr(fixtures, "recent_results", lambda days=7: pd.DataFrame(columns=["match_id", "hg", "ag"]))
+    asked = []
+
+    def fake_results(since, now=None, slugs=None):
+        asked.append(slugs)
+        return pd.DataFrame([{"event_id": "77", "hg": 1, "ag": 1, "status": "STATUS_FINAL_AET"}])
+
+    monkeypatch.setattr(intl_fixtures, "results", fake_results)
+    assert service.update_results(h, bets, pd.Timestamp("2026-11-08T12:00Z")) == [bid]
+    assert bets.list()[0]["status"] == "won"
+    assert set(cup_fixtures.CUPS) <= set(asked[0])  # cup competitions are searched too

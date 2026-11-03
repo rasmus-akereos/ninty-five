@@ -95,8 +95,19 @@ def parse_extra(raw: bytes) -> pd.DataFrame:
     return _frame(df["_div"], df, "Home", "Away")
 
 
+RESERVE = {"ii", "b", "2"}  # reserve sides: "Real Sociedad II", "Celta B"
+
+
+def _reserve(name: str) -> bool:
+    toks = _tokens(name)
+    return len(toks) > 1 and toks[-1] in RESERVE
+
+
 def _norm(name: str) -> str:
-    return " ".join("united" if t == "utd" else t for t in _tokens(name))
+    toks = _tokens(name)
+    if _reserve(name):
+        toks = toks[:-1]
+    return " ".join("united" if t == "utd" else t for t in toks)
 
 
 def resolve_name(name: str, division: str, teams) -> str | None:
@@ -108,8 +119,9 @@ def resolve_name(name: str, division: str, teams) -> str | None:
         return ALIASES[(division, name)]
     if name in teams:
         return name
-    n = _norm(name)
-    hits = {t for t in teams if n == _norm(t) or same_team(n, _norm(t)) or same_team(_norm(t), n)}
+    n, reserve = _norm(name), _reserve(name)
+    hits = {t for t in teams if _reserve(t) == reserve
+            and (n == _norm(t) or same_team(n, _norm(t)) or same_team(_norm(t), n))}
     return hits.pop() if len(hits) == 1 else None
 
 

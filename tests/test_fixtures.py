@@ -112,7 +112,7 @@ def test_update_results_settles_bets_by_key(tmp_path, monkeypatch):
     h.save_board([row], "t")
     bid = bets.add({"dataset": "INTL", "home": "A", "away": "B", "market": "1", "odds": 2.0, "stake": 10,
                     "match_key": "espn:9"})
-    monkeypatch.setattr(intl_fixtures, "results", lambda since, now=None: pd.DataFrame(
+    monkeypatch.setattr(intl_fixtures, "results", lambda since, now=None, slugs=None: pd.DataFrame(
         [{"event_id": "9", "hg": 2, "ag": 0, "status": "STATUS_FULL_TIME"}]))
     monkeypatch.setattr(fixtures, "recent_results", lambda days=7: pd.DataFrame(columns=["match_id", "hg", "ag"]))
     assert service.update_results(h, bets, pd.Timestamp("2026-11-03T12:00Z")) == [bid]

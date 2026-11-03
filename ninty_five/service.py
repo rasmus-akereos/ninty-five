@@ -10,7 +10,7 @@ import uuid
 import pandas as pd
 
 from . import data as data_mod
-from . import fixtures, intl_fixtures, league_fixtures
+from . import cup_fixtures, fixtures, intl_fixtures, league_fixtures
 from .model import CLUB_PARAMS, INTL_PARAMS, DixonColes, markets
 
 LEAGUE_LOOKBACK_DAYS = 31
@@ -178,10 +178,34 @@ def league_board(days: int, now: pd.Timestamp | None = None) -> list[dict]:
     return rows
 
 
+def cup_board(days: int, now: pd.Timestamp | None = None) -> tuple[list[dict], list[str]]:
+    """Domestic cup matches between known clubs (ESPN), priced by country
+    models. Returns (rows, warnings about unmapped league clubs)."""
+    fx, warnings = cup_fixtures.upcoming(days, now)
+    rows = []
+    for f in fx.itertuples():
+        _, model, df = _cached(f.dataset)
+        row = {
+            "key": f.key,
+            "dataset": f.dataset,
+            "match_id": None,
+            "kickoff": f.kickoff.isoformat(),
+            "competition": f.competition,
+            "detail": "",
+            "stage": "",
+            "home": f.home,
+            "away": f.away,
+            "neutral": bool(f.neutral),
+        }
+        rows.append(_priced(model, df, row))
+    return rows, warnings
+
+
 BOARD_SOURCES = (
     ("Club fixtures", "club_board"),
     ("National-team fixtures", "intl_board"),
     ("Lower-league fixtures", "league_board"),
+    ("Cup fixtures", "cup_board"),
 )
 
 
@@ -195,7 +219,11 @@ def build_board(days: int = 7) -> tuple[list[dict], list[str]]:
     errors: list[Exception] = []
     for name, fn in BOARD_SOURCES:
         try:
-            rows += globals()[fn](days)
+            got = globals()[fn](days)
+            if isinstance(got, tuple):  # (rows, warnings)
+                got, extra = got
+                warnings += extra
+            rows += got
         except Exception as exc:
             errors.append(exc)
             warnings.append(f"{name} unavailable: {exc}")
@@ -241,7 +269,8 @@ def update_results(history, bets, now: pd.Timestamp) -> list[int]:
     if intl:
         try:
             since = min(pd.Timestamp(p["kickoff"]) for p in intl)
-            res = {r.event_id: r for r in intl_fixtures.results(since, now).itertuples()}
+            slugs = intl_fixtures.SLUGS + list(cup_fixtures.CUPS)  # national teams and cups
+            res = {r.event_id: r for r in intl_fixtures.results(since, now, slugs=slugs).itertuples()}
             for p in intl:
                 r = res.get(p["key"][5:])
                 if r is None:
@@ -252,7 +281,7 @@ def update_results(history, bets, now: pd.Timestamp) -> list[int]:
                     found[p["key"]] = (int(r.hg), int(r.ag))
                     history.set_result(p["key"], *found[p["key"]], r.status)
         except Exception as exc:
-            log.warning("national-team results unavailable: %s", exc)
+            log.warning("national-team and cup results unavailable: %s", exc)
 
     lower = [p for p in all_pending if p["key"].startswith("fdcu:")]
     for division in sorted({p["key"].split(":")[1] for p in lower}):

@@ -72,6 +72,18 @@ A league where the model doesn't beat the baseline (or that was never
 checked) shows a **model unproven** tag. If the board warns about an unknown
 team name, add it to `ALIASES` in `ninty_five/league_fixtures.py`.
 
+### Cups
+
+The **FA Cup, Carabao Cup, DFB-Pokal, Copa del Rey, Coppa Italia and Coupe de
+France** come from ESPN (no key) and are priced by the country models. Only
+ties between two clubs the model knows are listed: England's top four
+divisions and the top two in Germany, Spain, Italy and France. A non-league
+or lower-division side is skipped. A finals venue marked neutral is priced
+without home advantage. Bets settle on the **90-minute score** (extra time and
+penalties don't count). If the board warns that a league club has no model
+team, add its ESPN name to `ALIASES` in `ninty_five/cup_fixtures.py`. The
+Danish cup isn't covered: no free source carries it.
+
 ### Daily fetch
 
 While the app runs it fetches the board, results and the lower leagues'

@@ -107,7 +107,10 @@ def _get(slug: str, month: str) -> dict:
     return payload
 
 
-def parse_scoreboard(payload: dict) -> pd.DataFrame:
+def parse_scoreboard(payload: dict, club: bool = False) -> pd.DataFrame:
+    """Events of one scoreboard. National teams get INTL spellings and a
+    neutral venue inferred from the venue country; clubs (`club=True`) keep
+    ESPN's names and use ESPN's neutral-site flag."""
     leagues = payload.get("leagues") or [{}]
     league = leagues[0].get("name") or leagues[0].get("abbreviation") or "International"
     rows = []
@@ -116,10 +119,12 @@ def parse_scoreboard(payload: dict) -> pd.DataFrame:
         sides = {c.get("homeAway"): c for c in comp.get("competitors", [])}
         if "home" not in sides or "away" not in sides:
             continue
-        home = team_name(sides["home"]["team"]["displayName"])
-        away = team_name(sides["away"]["team"]["displayName"])
+        home, away = sides["home"]["team"]["displayName"], sides["away"]["team"]["displayName"]
+        if not club:
+            home, away = team_name(home), team_name(away)
         venue = comp.get("venue") or e.get("venue") or {}
         country = (venue.get("address") or {}).get("country")
+        neutral = bool(comp.get("neutralSite")) if club else is_neutral(home, country)
         rows.append(
             {
                 "event_id": str(e["id"]),
@@ -127,7 +132,7 @@ def parse_scoreboard(payload: dict) -> pd.DataFrame:
                 "league": league,
                 "home": home,
                 "away": away,
-                "neutral": is_neutral(home, country),
+                "neutral": neutral,
                 "status": ((e.get("status") or {}).get("type") or {}).get("name", ""),
             }
         )
@@ -141,20 +146,22 @@ def _months(start: pd.Timestamp, end: pd.Timestamp) -> list[str]:
     return [p.strftime("%Y%m") for p in pd.period_range(start.tz_localize(None).to_period("M"), end.tz_localize(None).to_period("M"), freq="M")]
 
 
-def upcoming(days: int = 7, now: pd.Timestamp | None = None) -> pd.DataFrame:
+def upcoming(days: int = 7, now: pd.Timestamp | None = None, slugs: list[str] | None = None,
+             club: bool = False) -> pd.DataFrame:
     """Scheduled national-team matches from now until `days` days ahead.
     Competitions that fail to load are skipped; if all fail, raise."""
     now = now or pd.Timestamp.now(tz="UTC")
     end = now.normalize() + pd.Timedelta(days=days)
     frames, errors = [], []
-    for slug in SLUGS:
+    for slug in slugs or SLUGS:
         for month in _months(now, end):
             try:
-                frames.append(parse_scoreboard(_get(slug, month)))
+                frames.append(parse_scoreboard(_get(slug, month), club=club).assign(slug=slug))
             except Exception as exc:  # one competition down shouldn't hide the rest
                 errors.append(f"{slug} {month}: {exc}")
     if not frames:
-        raise RuntimeError("Could not load national-team fixtures from ESPN: " + "; ".join(errors[:3]))
+        what = "cup" if club else "national-team"
+        raise RuntimeError(f"Could not load {what} fixtures from ESPN: " + "; ".join(errors[:3]))
     df = pd.concat(frames, ignore_index=True).drop_duplicates("event_id")
     df = df[df["status"].isin(SCHEDULED) & (df["kickoff"] >= now) & (df["kickoff"] < end)]
     return df.sort_values("kickoff").reset_index(drop=True)
@@ -215,12 +222,12 @@ def goals_90(event: dict) -> tuple[int, int] | None:
     return goals[0], goals[1]
 
 
-def results(since: pd.Timestamp, now: pd.Timestamp | None = None) -> pd.DataFrame:
+def results(since: pd.Timestamp, now: pd.Timestamp | None = None, slugs: list[str] | None = None) -> pd.DataFrame:
     """Finished or called-off national-team events between `since` and `now`:
     event_id, hg, ag (90 minutes; NaN when undetermined), status."""
     now = now or pd.Timestamp.now(tz="UTC")
     rows, errors, ok = [], [], False
-    for slug in SLUGS:
+    for slug in slugs or SLUGS:
         for month in _months(since, now):
             try:
                 payload = _get(slug, month)
