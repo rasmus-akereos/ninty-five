@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import fixtures, import_odds, service, track, validate
+from . import fixtures, import_odds, scheduler, service, track, validate
 from .model import DixonColes, markets
 from .history import HistoryStore
 from .store import BetStore
@@ -19,9 +20,18 @@ from .value import Settings, evaluate, market_probabilities, overround
 
 STATIC = Path(__file__).resolve().parent / "static"
 
-app = FastAPI(title="ninty-five")
 store = BetStore()
 history = HistoryStore()
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    # The daily fetch (07:00 Copenhagen time, with catch-up on start).
+    scheduler.start(history, store)
+    yield
+
+
+app = FastAPI(title="ninty-five", lifespan=lifespan)
 log = logging.getLogger("ninty_five")
 
 

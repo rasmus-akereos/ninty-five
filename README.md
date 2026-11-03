@@ -50,6 +50,38 @@ National-team fixtures come from ESPN's public scoreboard data (no key needed).
 It is an unofficial, undocumented feed, so it can change without notice; if it
 fails, the board still shows the club matches with a warning.
 
+### Lower leagues
+
+The board also lists **League One, League Two, 2. Bundesliga, Segunda
+División, Serie B, Ligue 2 and the Danish Superliga** (buttons *England 3*,
+*England 4*, *Germany 2*, *Spain 2*, *Italy 2*, *France 2*, *Denmark 1*). They
+come from football-data.co.uk (no key), which publishes fixtures about twice
+a week, just before each round: these matches appear **2–3 days before
+kick-off**, not a week ahead, and their bets settle a day or two after the
+match, when the site adds the result.
+
+Each country has its own model (`ENG`, `GER`, `ESP`, `ITA`, `FRA`, `DEN`),
+trained on its divisions together so promoted and relegated clubs tell it how
+strong each division is. Check them with
+
+```bash
+ninty-five validate            # walk-forward 1X2 log loss vs a home/draw/away baseline
+```
+
+A league where the model doesn't beat the baseline (or that was never
+checked) shows a **model unproven** tag. If the board warns about an unknown
+team name, add it to `ALIASES` in `ninty_five/league_fixtures.py`.
+
+### Daily fetch
+
+While the app runs it fetches the board, results and the lower leagues'
+latest results by itself **every day at 07:00 Danish time**. If the computer
+was off at 07:00, it fetches when the app starts (when the last fetch is over
+24 hours old). A failed fetch is retried every hour. The line above the
+matches shows when it last ran. A Refresh pressed during a fetch says
+"Refresh already running" instead of fetching twice. Switch it off with
+`NINTY_FIVE_SCHEDULER=0`.
+
 ### Danske Spil button
 
 Drag the **→ ninty-five** button at the top of the board to your browser's
@@ -115,6 +147,7 @@ pytest
 | `INTL` | [martj42/international_results](https://github.com/martj42/international_results) | All senior men's internationals; the model uses 2014 onward |
 | `E0`, `D1`, `SP1`, ... | football-data.co.uk season CSVs | Big European leagues, last 4 seasons |
 | `DNK`, `SWE`, `BRA`, `USA`, ... | football-data.co.uk "extra leagues" | Worldwide leagues |
+| `ENG`, `GER`, `ESP`, `ITA`, `FRA`, `DEN` | football-data.co.uk | One model per country: its divisions together (lower-league board) |
 
 Files are cached in `data/`. The refresh endpoint (`POST /api/refresh?dataset=INTL`)
 downloads them again. Fixtures are not downloaded. You enter the match yourself.

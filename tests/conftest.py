@@ -1,6 +1,10 @@
+import os
+
 import pytest
 
 from ninty_five import league_fixtures
+
+os.environ.setdefault("NINTY_FIVE_SCHEDULER", "0")  # no daily-fetch thread in tests
 
 EMPTY = {
     league_fixtures.FIXTURES_URL: b"Div,Date,Time,HomeTeam,AwayTeam\n",

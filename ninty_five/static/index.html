@@ -263,8 +263,15 @@ function setBoard(r, extra = "") {
     if (f) open.fixture = f; else open = null;
   }
   const updated = r.fetched_at ? ` · updated ${hhmm(r.fetched_at)}` : "";
-  $("board-info").textContent = `${board.length} matches${updated}${extra} · prices are the minimum odds worth betting (edge ≥ ${$("boardedge").value}%) · click a match to open it`;
+  $("board-info").textContent = `${board.length} matches${updated}${autoInfo(r.last_auto)}${extra} · prices are the minimum odds worth betting (edge ≥ ${$("boardedge").value}%) · click a match to open it`;
   renderBoard();
+}
+
+// The daily automatic fetch (07:00 Danish time): when it last ran, or why it failed.
+function autoInfo(run) {
+  if (!run) return "";
+  const when = new Date(run.finished).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  return run.error ? ` · auto-fetch failed ${when}: ${run.error} (retrying hourly)` : ` · auto-fetched ${when}`;
 }
 
 const boardQuery = () => `days=${+$("days").value}&min_edge=${boardEdge()}`;
