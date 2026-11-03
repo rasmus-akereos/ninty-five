@@ -104,3 +104,15 @@ def test_track_record_endpoint(client):
     assert m["result"] == "2-1" and m["bets"] == ["1 @ 2.50"]
     assert m["model"]["1"] == 0.5 and m["market"]["1"] == pytest.approx(0.38, abs=0.02)
     assert client.get("/api/track-record?competition=Spain").json()["matches"] == []
+
+
+def test_import_odds_finds_board_match(client, monkeypatch):
+    row = {**_row(), "home": "Blackburn Rovers FC", "away": "Stoke City FC", "key": "fd:7"}
+    monkeypatch.setattr(service, "build_board", lambda days: ([row], []))
+    client.post("/api/fixtures/refresh")
+    text = "Kampvinder\n1\n2,70\nX\n3,40\n2\n2,60"
+    r = client.post("/api/import-odds", json={"text": text, "title": "Blackburn - Stoke | England Championship Odds"}).json()
+    assert r["match_key"] == "fd:7" and r["odds"] == {"1": 2.7, "X": 3.4, "2": 2.6}
+    assert (r["home"], r["away"]) == ("Blackburn", "Stoke")
+    miss = client.post("/api/import-odds", json={"text": text, "title": "Leeds - Hull | x"}).json()
+    assert miss["match_key"] is None and miss["odds"]["1"] == 2.7

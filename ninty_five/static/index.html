@@ -44,6 +44,7 @@ tr.rec td { background: var(--good-bg); }
 .kpi span { color: var(--muted); font-size: 12px; }
 .muted { color: var(--muted); }
 details summary { cursor: pointer; color: var(--muted); }
+a.bookmarklet { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; cursor: grab; }
 h3.sub { margin: 4px 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
 
 /* board */
@@ -107,6 +108,8 @@ tr.fold > td { text-align: left; white-space: normal; background: var(--accent-b
       </div>
     </details>
     <div class="chips" id="chips"></div>
+    <p class="muted" id="import-help">Danske Spil button: drag <a id="bookmarklet" class="bookmarklet" href="#">→ ninty-five</a> to your bookmarks bar. On a Danske Spil match page, click it to bring that match's odds here.</p>
+    <div class="note" id="import-note" hidden></div>
     <p class="muted" id="board-info">Figures are the minimum Danske Spil odds worth betting at. Click a match to fold it open and type the real odds.</p>
     <div class="scroll"><table id="board"></table></div>
   </section>
@@ -269,8 +272,8 @@ function renderBoard() {
   if (again) { again.focus(); if (caret != null) try { again.setSelectionRange(caret, caret); } catch {} }
 }
 
-function toggle(key) {
-  if (open && open.key === key) { open = null; renderBoard(); return; }
+function toggle(key, preset = null) {
+  if (open && open.key === key && !preset) { open = null; renderBoard(); return; }
   if (key === "manual") {
     const ds = store.get("manualDataset") || "INTL";
     open = { key, fixture: null, dataset: ds in datasets ? ds : "INTL", home: "", away: "", neutral: ds === "INTL", odds: {}, result: null, lastOdds: null };
@@ -278,6 +281,7 @@ function toggle(key) {
     const f = board.find(x => x.key === key);
     open = { key, fixture: f, dataset: f.dataset || "EUROPE", home: f.home, away: f.away, neutral: f.neutral, odds: {}, result: null, lastOdds: null };
   }
+  if (preset) Object.assign(open, preset);
   renderBoard();
   if (key === "manual") { loadTeams(open.dataset); $("f-home").focus(); }
   else { evaluate(); document.querySelector('#board [data-market="1"]')?.focus(); }
@@ -432,6 +436,43 @@ async function loadTeams(ds) {
   } catch (e) { if ($("f-info")) $("f-info").textContent = e.message; }
 }
 
+// ------------------------------------------------- Danske Spil bookmark
+// The bookmark reads the visible text of the Danske Spil match page you're on
+// and opens this app with it in the URL fragment (never sent anywhere but here).
+function bookmarkletCode() {
+  const target = `${location.origin}/#import=`;
+  return "javascript:(()=>{const m=document.querySelector('main')||document.body;" +
+    "const d={t:document.title,x:m.innerText.slice(0,30000)};" +
+    `window.open('${target}'+encodeURIComponent(JSON.stringify(d)),'ninty-five');})()`;
+}
+
+const toText = odds => Object.fromEntries(Object.entries(odds).map(([k, v]) => [k, num(v)]));
+
+async function handleImport() {
+  if (!location.hash.startsWith("#import=")) return;
+  let d;
+  try { d = JSON.parse(decodeURIComponent(location.hash.slice(8))); } catch { return; }
+  history.replaceState(null, "", location.pathname);
+  let r;
+  try { r = await api("/api/import-odds", { method: "POST", body: JSON.stringify({ text: d.x || "", title: d.t || "" }) }); }
+  catch (e) { showImportNote(`Couldn't read the Danske Spil page: ${e.message}`); return; }
+  await boardReady;
+  const n = Object.keys(r.odds).length;
+  if (!n) { showImportNote("No odds found on that page. Open a single match on Danske Spil (not the overview) and click the button again."); return; }
+  const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (r.match_key && board.find(f => f.key === r.match_key)) {
+    league = "All";
+    toggle(r.match_key, { odds: toText(r.odds) });
+    showImportNote(`Imported ${n} prices for ${r.home} – ${r.away} from Danske Spil at ${at}.`);
+  } else {
+    toggle("manual", { home: "", away: "", odds: toText(r.odds) });
+    showImportNote(`Imported ${n} prices for ${r.home || "?"} – ${r.away || "?"} at ${at}, but couldn't find that match on the board. Pick the two teams below.`);
+  }
+  document.querySelector("#board tr.open")?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function showImportNote(msg) { const n = $("import-note"); n.textContent = msg; n.hidden = false; }
+
 // ---------------------------------------------------------- track record
 const GROUP_NAMES = { "1X2": "1X2", "OU25": "Over/Under 2.5" };
 
@@ -541,7 +582,11 @@ $("boardedge").addEventListener("change", showStored);  // min odds are derived;
 $("days").addEventListener("change", () => +$("days").value > fetchedDays ? refreshBoard() : showStored());
 api("/api/datasets").then(ds => { datasets = ds; }).catch(() => {});
 renderBoard();
-initBoard();
+$("bookmarklet").href = bookmarkletCode();
+$("bookmarklet").onclick = e => { e.preventDefault(); showImportNote("Drag the button to your bookmarks bar instead of clicking it here. Then use it on a Danske Spil match page."); };
+const boardReady = initBoard();
+handleImport();
+window.addEventListener("hashchange", handleImport);
 loadTrack();
 loadBets();
 </script>

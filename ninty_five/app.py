@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import fixtures, service, track
+from . import fixtures, import_odds, service, track
 from .model import DixonColes, markets
 from .history import HistoryStore
 from .store import BetStore
@@ -117,6 +117,22 @@ def refresh_fixture_board(days: int = 7, min_edge: float = 0.08) -> dict:
     except Exception as exc:
         raise HTTPException(502, f"Could not fetch fixtures: {exc}") from exc
     return {**_stored_board(days, min_edge), "warnings": out["warnings"], "auto_settled": out["auto_settled"]}
+
+
+class ImportIn(BaseModel):
+    text: str = Field(max_length=200_000)
+    title: str = ""
+
+
+@app.post("/api/import-odds")
+def import_page_odds(req: ImportIn) -> dict:
+    """Odds read from a Danske Spil match page by the bookmark button, matched
+    to a stored board match (match_key None if no single match fits)."""
+    parsed = import_odds.parse_page(req.text, req.title)
+    match = None
+    if parsed["home"] and parsed["away"]:
+        match = import_odds.find_match(parsed["home"], parsed["away"], history.board(days=30))
+    return {**parsed, "match_key": match["key"] if match else None}
 
 
 @app.get("/api/track-record")

@@ -1,0 +1,40 @@
+from pathlib import Path
+
+from ninty_five import import_odds
+
+TEXT = (Path(__file__).parent / "data" / "danskespil_blackburn_stoke.txt").read_text()
+TITLE = "Blackburn - Stoke | England Championship Odds | Spil på kampen her"
+
+
+def test_parse_danskespil_event_page():
+    p = import_odds.parse_page(TEXT, TITLE)
+    assert (p["home"], p["away"]) == ("Blackburn", "Stoke")
+    assert p["odds"] == {
+        "1": 2.70, "X": 3.40, "2": 2.60,
+        "BTTS Yes": 1.77, "BTTS No": 1.95,
+        "Over 0.5": 1.04, "Under 0.5": 8.00, "Over 1.5": 1.31, "Under 1.5": 3.15,
+        "Over 2.5": 1.98, "Under 2.5": 1.77, "Over 3.5": 3.40, "Under 3.5": 1.29,
+        "Over 4.5": 6.25, "Under 4.5": 1.08,
+    }
+
+
+def test_parse_page_without_markets():
+    p = import_odds.parse_page("Fodbold\nNoget andet", "Danske Spil")
+    assert p["odds"] == {} and p["home"] is None
+
+
+def test_team_names_match_board_names():
+    m = import_odds.same_team
+    assert m("Blackburn", "Blackburn Rovers FC") and m("Stoke", "Stoke City FC")
+    assert m("Man United", "Manchester United FC") and m("Atl. Madrid", "Club Atlético de Madrid")
+    assert m("Bayern München", "FC Bayern München") and m("PSV", "PSV") and m("Paris SG", "Paris Saint-Germain FC")
+    assert m("Danmark", "Denmark") and m("Tyrkiet", "Turkey")
+    assert not m("Stoke", "Blackburn Rovers FC") and not m("Man City", "Manchester United FC")
+
+
+def test_find_match_on_board():
+    board = [{"key": "fd:1", "home": "Portsmouth FC", "away": "Swansea City AFC"},
+             {"key": "fd:2", "home": "Blackburn Rovers FC", "away": "Stoke City FC"}]
+    assert import_odds.find_match("Blackburn", "Stoke", board)["key"] == "fd:2"
+    assert import_odds.find_match("Stoke", "Blackburn", board) is None  # home/away must agree
+    assert import_odds.find_match("Leeds", "Hull", board) is None

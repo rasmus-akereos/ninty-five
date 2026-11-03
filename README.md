@@ -50,6 +50,17 @@ National-team fixtures come from ESPN's public scoreboard data (no key needed).
 It is an unofficial, undocumented feed, so it can change without notice; if it
 fails, the board still shows the club matches with a warning.
 
+### Danske Spil button
+
+Drag the **→ ninty-five** button at the top of the board to your browser's
+bookmarks bar. On a Danske Spil match page (logged in or not), click it: it
+reads the prices shown on that page (1X2, over/under, both teams to score)
+and opens the app with that match folded open and the boxes filled in. It
+only reads the page you have open; nothing is sent to Danske Spil. If the
+match isn't on the board, it opens "Add a match" with the prices filled in.
+It reads the page's text, so a redesign of Danske Spil's match page may need
+an update to `ninty_five/import_odds.py`.
+
 ### History and track record
 
 The board is kept between visits: opening the page shows the last fetch at
