@@ -79,9 +79,12 @@ def test_europe_board_and_auto_settle(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(fixtures, "upcoming", lambda days=7, competitions=None: upcoming)
     service._models.clear()
-    monkeypatch.setattr(service, "intl_board", lambda days, min_edge: [])
+    monkeypatch.setattr(service, "intl_board", lambda days: [])
     board, warnings = service.board(days=7, min_edge=0.1)
     assert warnings == []
+    assert board[0]["key"] == "fd:9001" and set(board[0]["form"]) == {"home", "away"}
+    assert board[0]["form"]["home"] and board[0]["form"]["home"][0]["result"] in "WDL"
+    assert "Over 1.5" in board[0]["probabilities"]  # all markets, not just the board columns
     assert board[0]["rated"] and not board[1]["rated"]
     p = board[0]["probabilities"]
     assert p["1"] + p["X"] + p["2"] == pytest.approx(1)

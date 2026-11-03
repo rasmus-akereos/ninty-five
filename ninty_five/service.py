@@ -14,7 +14,7 @@ from .model import CLUB_PARAMS, INTL_PARAMS, DixonColes, markets
 BOARD_MARKETS = ["1", "X", "2", "Over 2.5", "Under 2.5", "BTTS Yes", "BTTS No"]
 MODEL_TTL_SECONDS = 6 * 3600
 
-_models: dict[str, tuple[float, DixonColes]] = {}
+_models: dict[str, tuple[float, DixonColes, pd.DataFrame]] = {}
 _lock = threading.Lock()
 
 
@@ -22,50 +22,94 @@ def datasets() -> dict[str, str]:
     return {"EUROPE": "Europe: Champions League + top leagues (auto fixtures)", **data_mod.available_datasets()}
 
 
-def fit_dataset(key: str, refresh: bool = False) -> DixonColes:
+def _fit(key: str, refresh: bool = False) -> tuple[DixonColes, pd.DataFrame]:
+    """Fit the model for a data set and return it with its training frame."""
     key = key.upper()
     if key == "EUROPE":
         df, groups = fixtures.load_europe(refresh=refresh)
-        return DixonColes(**CLUB_PARAMS).fit(df, groups=groups)
+        return DixonColes(**CLUB_PARAMS).fit(df, groups=groups), df
     df = data_mod.load_dataset(key, refresh=refresh)
-    return DixonColes(**(INTL_PARAMS if key == "INTL" else CLUB_PARAMS)).fit(df)
+    return DixonColes(**(INTL_PARAMS if key == "INTL" else CLUB_PARAMS)).fit(df), df
 
 
-def get_model(key: str, refresh: bool = False) -> DixonColes:
+def fit_dataset(key: str, refresh: bool = False) -> DixonColes:
+    return _fit(key, refresh)[0]
+
+
+def _cached(key: str, refresh: bool = False) -> tuple[float, DixonColes, pd.DataFrame]:
     key = key.upper()
     with _lock:
         cached = _models.get(key)
         # EUROPE data updates during the season, so refit periodically.
         expired = cached and key == "EUROPE" and time.time() - cached[0] > MODEL_TTL_SECONDS
         if refresh or cached is None or expired:
-            _models[key] = (time.time(), fit_dataset(key, refresh=refresh))
-        return _models[key][1]
+            _models[key] = (time.time(), *_fit(key, refresh=refresh))
+        return _models[key]
 
 
-def _priced(model: DixonColes, row: dict) -> dict:
-    """Add model prices and minimum odds to a fixture row (or mark it unrated)."""
-    home, away, neutral, min_edge = row["home"], row["away"], row["neutral"], row.pop("_min_edge")
+def get_model(key: str, refresh: bool = False) -> DixonColes:
+    return _cached(key, refresh)[1]
+
+
+def training_data(key: str) -> pd.DataFrame:
+    """The results the cached model for `key` was fitted on (data.COLUMNS)."""
+    return _cached(key)[2]
+
+
+def form(df: pd.DataFrame, team: str, before: pd.Timestamp, n: int = 5) -> list[dict]:
+    """A team's last `n` results before `before`, most recent first."""
+    cutoff = before.tz_convert(None) if before.tzinfo else before
+    games = df[((df["home"] == team) | (df["away"] == team)) & (pd.to_datetime(df["date"]) < cutoff)]
+    out = []
+    for g in games.sort_values("date", ascending=False).head(n).itertuples():
+        at_home = g.home == team
+        gf, ga = (int(g.hg), int(g.ag)) if at_home else (int(g.ag), int(g.hg))
+        out.append({
+            "date": pd.Timestamp(g.date).strftime("%Y-%m-%d"),
+            "opponent": g.away if at_home else g.home,
+            "venue": "N" if bool(g.neutral) else ("H" if at_home else "A"),
+            "gf": gf,
+            "ga": ga,
+            "result": "W" if gf > ga else "D" if gf == ga else "L",
+        })
+    return out
+
+
+def _priced(model: DixonColes, df: pd.DataFrame, row: dict) -> dict:
+    """Add model prices for every market and both teams' form to a fixture
+    row, or mark it unrated when the model doesn't know a team."""
+    home, away, neutral = row["home"], row["away"], row["neutral"]
     try:
         lh, la = model.expected_goals(home, away, neutral)
     except KeyError:
         return {**row, "rated": False}
-    probs = markets(model.score_matrix(home, away, neutral))
+    kickoff = pd.Timestamp(row["kickoff"])
     return {
         **row,
         "rated": True,
+        "model_as_of": str(model.as_of.date()),
         "xg": [lh, la],
         "data_matches": [model.n_matches.get(home, 0), model.n_matches.get(away, 0)],
         "leagues": [model.groups.get(home, ""), model.groups.get(away, "")],
-        "probabilities": {k: probs[k] for k in BOARD_MARKETS},
-        "min_odds": {k: (1 + min_edge) / probs[k] for k in BOARD_MARKETS},
+        "probabilities": {k: float(v) for k, v in markets(model.score_matrix(home, away, neutral)).items()},
+        "form": {"home": form(df, home, kickoff), "away": form(df, away, kickoff)},
     }
 
 
-def club_board(days: int, min_edge: float) -> list[dict]:
-    model = get_model("EUROPE")
+def with_min_odds(rows: list[dict], min_edge: float) -> list[dict]:
+    """Minimum odds worth betting at:  (1 + min_edge) / p_model."""
+    return [
+        {**r, "min_odds": {k: (1 + min_edge) / r["probabilities"][k] for k in BOARD_MARKETS}} if r.get("rated") else r
+        for r in rows
+    ]
+
+
+def club_board(days: int) -> list[dict]:
+    _, model, df = _cached("EUROPE")
     rows = []
     for f in fixtures.upcoming(days).itertuples():
         row = {
+            "key": f"fd:{int(f.match_id)}",
             "dataset": "EUROPE",
             "match_id": int(f.match_id),
             "kickoff": f.kickoff.isoformat(),
@@ -75,19 +119,18 @@ def club_board(days: int, min_edge: float) -> list[dict]:
             "home": f.home,
             "away": f.away,
             "neutral": f.stage == "FINAL",
-            "_min_edge": min_edge,
         }
-        rows.append(_priced(model, row))
+        rows.append(_priced(model, df, row))
     return rows
 
 
-def intl_board(days: int, min_edge: float) -> list[dict]:
-    """National-team matches. They have no football-data.org match id, so bets
-    on them are settled by hand (match_id None)."""
-    model = get_model("INTL")
+def intl_board(days: int) -> list[dict]:
+    """National-team matches (no football-data.org match id)."""
+    _, model, df = _cached("INTL")
     rows = []
     for f in intl_fixtures.upcoming(days).itertuples():
         row = {
+            "key": f"espn:{f.event_id}",
             "dataset": "INTL",
             "match_id": None,
             "kickoff": f.kickoff.isoformat(),
@@ -97,15 +140,13 @@ def intl_board(days: int, min_edge: float) -> list[dict]:
             "home": f.home,
             "away": f.away,
             "neutral": bool(f.neutral),
-            "_min_edge": min_edge,
         }
-        rows.append(_priced(model, row))
+        rows.append(_priced(model, df, row))
     return rows
 
 
-def board(days: int = 7, min_edge: float = 0.08) -> tuple[list[dict], list[str]]:
-    """Upcoming club and national-team fixtures with model prices and the
-    minimum odds worth betting at:  min_odds = (1 + min_edge) / p_model.
+def build_board(days: int = 7) -> tuple[list[dict], list[str]]:
+    """Fresh upcoming club and national-team fixtures with model prices and form.
 
     Returns (rows, warnings). A source that fails becomes a warning so the
     other still shows; if both fail, the first error is raised."""
@@ -114,7 +155,7 @@ def board(days: int = 7, min_edge: float = 0.08) -> tuple[list[dict], list[str]]
     errors: list[Exception] = []
     for name, build in (("Club fixtures", club_board), ("National-team fixtures", intl_board)):
         try:
-            rows += build(days, min_edge)
+            rows += build(days)
         except Exception as exc:
             errors.append(exc)
             warnings.append(f"{name} unavailable: {exc}")
@@ -122,6 +163,12 @@ def board(days: int = 7, min_edge: float = 0.08) -> tuple[list[dict], list[str]]
         raise errors[0]
     rows.sort(key=lambda r: r["kickoff"])
     return rows, warnings
+
+
+def board(days: int = 7, min_edge: float = 0.08) -> tuple[list[dict], list[str]]:
+    """Fresh board with minimum odds (used by the CLI)."""
+    rows, warnings = build_board(days)
+    return with_min_odds(rows, min_edge), warnings
 
 
 def results_frame(days: int = 7) -> pd.DataFrame:

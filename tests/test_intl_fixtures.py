@@ -66,9 +66,9 @@ def test_upcoming_filters_window_and_survives_failing_competition(monkeypatch):
 
 
 def test_board_keeps_clubs_when_intl_source_fails(monkeypatch):
-    monkeypatch.setattr(service, "club_board", lambda days, min_edge: [{"kickoff": "2026-11-04T20:00:00+00:00"}])
+    monkeypatch.setattr(service, "club_board", lambda days: [{"kickoff": "2026-11-04T20:00:00+00:00"}])
 
-    def broken(days, min_edge):
+    def broken(days):
         raise RuntimeError("ESPN down")
 
     monkeypatch.setattr(service, "intl_board", broken)
