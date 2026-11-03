@@ -526,10 +526,11 @@ async function loadTeams(ds) {
 // The bookmark reads the visible text of the Danske Spil match page you're on
 // and opens this app with it in the URL fragment (never sent anywhere but here).
 function bookmarkletCode() {
-  const target = `${location.origin}/#import=`;
+  // ?v=<time> makes every click a full page load, so a tab left open on an
+  // older version of the app still gets the current page.
   return "javascript:(()=>{const m=document.querySelector('main')||document.body;" +
     "const d={t:document.title,x:m.innerText.slice(0,30000)};" +
-    `window.open('${target}'+encodeURIComponent(JSON.stringify(d)),'ninty-five');})()`;
+    `window.open('${location.origin}/?v='+Date.now()+'#import='+encodeURIComponent(JSON.stringify(d)),'ninty-five');})()`;
 }
 
 const toText = odds => Object.fromEntries(Object.entries(odds).map(([k, v]) => [k, num(v)]));

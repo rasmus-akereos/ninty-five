@@ -78,7 +78,8 @@ class SettleIn(BaseModel):
 # ------------------------------------------------------------------ routes
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC / "index.html")
+    # Always revalidate, so an updated page is picked up on the next load.
+    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/datasets")

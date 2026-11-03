@@ -116,3 +116,8 @@ def test_import_odds_finds_board_match(client, monkeypatch):
     assert (r["home"], r["away"]) == ("Blackburn", "Stoke")
     miss = client.post("/api/import-odds", json={"text": text, "title": "Leeds - Hull | x"}).json()
     assert miss["match_key"] is None and miss["odds"]["1"] == 2.7
+
+
+def test_page_is_not_cached(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "no-cache" in r.headers.get("cache-control", "")
