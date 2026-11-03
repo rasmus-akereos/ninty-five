@@ -31,12 +31,18 @@ a { color: var(--accent); }
 /* top bar */
 .topbar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
 .topbar-inner { max-width: 1100px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
-.logo { font-weight: 800; font-size: 18px; letter-spacing: .01em; color: var(--accent); margin-right: auto; display: flex; align-items: center; gap: 10px; }
+.logo { font-weight: 800; font-size: 18px; letter-spacing: .01em; color: var(--accent); display: flex; align-items: center; gap: 10px; margin-right: 8px; }
 .logo-mark { width: 58px; height: 30px; flex: none; }
 .logo span { color: var(--text); font-weight: 600; font-size: 12px; margin-left: 8px; opacity: .6; }
 .icon-btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
 .icon-btn:hover { border-color: var(--accent); }
 .icon-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.tabs { display: flex; gap: 4px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; margin-right: auto; }
+.tab { background: transparent; color: var(--muted); border: none; border-radius: 999px; padding: 6px 14px; font-weight: 600; font-size: 13px; }
+.tab.active { background: var(--accent); color: var(--accent-ink); }
+.tab .n { font-size: 11px; opacity: .75; margin-left: 2px; }
+.tabpane { display: grid; gap: 16px; }
+.tabpane[hidden] { display: none; }
 .chips-bar { max-width: 1100px; margin: 0 auto; padding: 0 16px 10px; }
 .chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
 .chip { flex: none; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
@@ -146,6 +152,10 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
       </svg>
       ninty-five<span>model vs. Danske Spil</span>
     </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="matches">Matches</button>
+      <button class="tab" role="tab" data-tab="bets">Bet log <span class="n" id="bets-count"></span></button>
+    </nav>
     <button class="icon-btn primary" id="loadboard" title="Fetch the latest fixtures and results">↻ Refresh</button>
     <button class="icon-btn" id="settings-btn" title="Settings">⚙ Settings</button>
     <button class="icon-btn" id="theme-btn" title="Light / dark">◐</button>
@@ -169,10 +179,21 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
     <p class="muted" id="import-help" style="margin-bottom:0">Danske Spil button: drag <a id="bookmarklet" class="bookmarklet" href="#">→ ninty-five</a> to your bookmarks bar. On a Danske Spil match page, click it to bring that match's odds here.</p>
   </div>
 
+  <div id="tab-matches" class="tabpane">
   <section>
     <div class="board-head"><h2>Matches</h2><span class="muted" id="board-info">Prices shown are the minimum Danske Spil odds worth betting at.</span></div>
     <div class="note" id="import-note" hidden></div>
     <div id="board"></div>
+  </section>
+
+  </div>
+
+  <div id="tab-bets" class="tabpane" hidden>
+  <section>
+    <h2>Bet log</h2>
+    <div id="outlook"></div>
+    <div class="kpis" id="kpis"></div>
+    <div class="scroll"><table id="bets"></table></div>
   </section>
 
   <section>
@@ -180,13 +201,7 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
     <p class="muted" id="track-info">How the model and Danske Spil did on finished board matches. Uses the league selected above.</p>
     <div id="track"></div>
   </section>
-
-  <section>
-    <h2>Bet log</h2>
-    <div id="outlook"></div>
-    <div class="kpis" id="kpis"></div>
-    <div class="scroll"><table id="bets"></table></div>
-  </section>
+  </div>
 </main>
 <datalist id="teams"></datalist>
 
@@ -554,6 +569,7 @@ async function handleImport() {
   try { r = await api("/api/import-odds", { method: "POST", body: JSON.stringify({ text: d.x || "", title: d.t || "" }) }); }
   catch (e) { showImportNote(`Couldn't read the Danske Spil page: ${e.message}`); return; }
   await boardReady;
+  showTab("matches");
   const n = Object.keys(r.odds).length;
   if (!n) { showImportNote("No odds found on that page. Open a single match on Danske Spil (not the overview) and click the button again."); return; }
   const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -647,6 +663,7 @@ async function loadBets() {
     ["Expected P/L (open)", num(s.open_expected_pnl, 0) + " kr"],
     ["Avg CLV", s.avg_clv == null ? "–" : `${pct(s.avg_clv)} (n=${s.n_clv})`],
   ].map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join("");
+  $("bets-count").textContent = s.n_open ? s.n_open : "";
   const o = s.outlook;
   $("summary").innerHTML = o ? [
     ["Open bets", `${num(o.staked, 0)} kr`],
@@ -677,6 +694,16 @@ async function loadBets() {
 }
 
 // ------------------------------------------------------------------ init
+function showTab(name) {
+  if (!["matches", "bets"].includes(name)) name = "matches";
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
+  $("tab-matches").hidden = name !== "matches";
+  $("tab-bets").hidden = name !== "bets";
+  store.set("tab", name);
+}
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => { showTab(t.dataset.tab); window.scrollTo(0, 0); });
+showTab(store.get("tab"));
+
 $("loadboard").onclick = refreshBoard;
 $("settings-btn").onclick = () => { const p = $("settings"); p.hidden = !p.hidden; };
 const applyTheme = t => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; };
