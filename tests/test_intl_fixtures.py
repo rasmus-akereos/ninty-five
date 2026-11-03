@@ -102,3 +102,16 @@ def test_results_returns_finished_and_cancelled(monkeypatch):
     df = intl_fixtures.results(since=pd.Timestamp("2026-09-25T00:00Z"), now=pd.Timestamp("2026-11-03T12:00Z"))
     assert list(df.event_id) == ["401861093"] and (df.hg[0], df.ag[0]) == (0, 0)
     assert df.status[0] == "STATUS_FULL_TIME"
+
+
+def _aet(details, home="2", away="1"):
+    return {"status": {"type": {"name": "STATUS_FINAL_AET"}}, "competitions": [{
+        "competitors": [{"homeAway": "home", "team": {"id": "1"}, "score": home},
+                        {"homeAway": "away", "team": {"id": "2"}, "score": away}],
+        "details": details}]}
+
+
+def test_goals_90_aet_incomplete_details_gives_no_result():
+    assert intl_fixtures.goals_90(_aet([])) is None                      # 2-1 final, no goal list
+    assert intl_fixtures.goals_90(_aet([_goal("1", "30'")])) is None      # only one of three goals listed
+    assert intl_fixtures.goals_90(_aet([_goal("1", "30'"), _goal("2", "70'"), _goal("1", "110'")])) == (1, 1)

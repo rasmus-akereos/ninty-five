@@ -118,3 +118,16 @@ def test_update_results_settles_bets_by_key(tmp_path, monkeypatch):
     assert service.update_results(h, bets, pd.Timestamp("2026-11-03T12:00Z")) == [bid]
     assert bets.list()[0]["status"] == "won" and bets.list()[0]["match_key"] == "espn:9"
     assert h.pending_results(pd.Timestamp("2026-11-03T12:00Z")) == []
+
+
+def test_recent_results_covers_more_than_ten_days(monkeypatch):
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((params["dateFrom"], params["dateTo"]))
+        return {"matches": []}
+
+    monkeypatch.setattr(fixtures, "_get", fake_get)
+    fixtures.recent_results(days=14)
+    spans = [(pd.Timestamp(str(b)) - pd.Timestamp(str(a))).days for a, b in calls]
+    assert len(calls) == 2 and all(s <= 10 for s in spans) and sum(spans) >= 14

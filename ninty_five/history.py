@@ -98,7 +98,9 @@ class HistoryStore:
                            dataset=excluded.dataset, match_id=excluded.match_id,
                            competition=excluded.competition, detail=excluded.detail, stage=excluded.stage,
                            kickoff=excluded.kickoff, home=excluded.home, away=excluded.away,
-                           neutral=excluded.neutral, last_seen=excluded.last_seen""",
+                           neutral=excluded.neutral, last_seen=excluded.last_seen,
+                           -- listed again as upcoming: any earlier postponement no longer applies
+                           status=NULL, home_goals=NULL, away_goals=NULL""",
                     (r["key"], r["dataset"], r.get("match_id"), r["competition"], r.get("detail", ""),
                      r.get("stage", ""), r["kickoff"], r["home"], r["away"], int(bool(r["neutral"])),
                      fetched_at, fetched_at),
@@ -192,6 +194,10 @@ class HistoryStore:
                     continue
                 prev = last.get(s["market"])
                 if prev and abs(prev["odds"] - odds) < 1e-9:
+                    continue
+                # A slower request typed earlier must not overwrite a newer price
+                # (ISO UTC timestamps of the same format compare as strings).
+                if prev and prev["entered_at"] > entered_at:
                     continue
                 c.execute(
                     """INSERT INTO odds_entries (match_key, dataset, home, away, entered_at, market, odds,

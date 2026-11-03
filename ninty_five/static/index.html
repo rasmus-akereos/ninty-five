@@ -243,6 +243,11 @@ function renderChips() {
 }
 
 function renderBoard() {
+  // A background refresh can redraw while the user is typing: remember the
+  // focused field and caret so typing carries on.
+  const active = document.activeElement, mk = active && active.dataset ? active.dataset.market : null;
+  const focusId = mk ? null : active && active.id && active.closest && active.closest("#board") ? active.id : null;
+  const caret = active && typeof active.selectionStart === "number" ? active.selectionStart : null;
   renderChips();
   const head = `<tr><th>Kick-off</th><th>Competition</th><th>Match</th>${BOARD_COLS.map(m => `<th>${m}</th>`).join("")}</tr>`;
   const add = `<tr class="add${open && open.key === "manual" ? " open" : ""}" data-key="manual"><td colspan="${NCOLS}"><span class="caret">${open && open.key === "manual" ? "▾" : "+"}</span>Add a match that isn't listed</td></tr>`;
@@ -258,6 +263,8 @@ function renderBoard() {
     (rows || `<tr><td colspan="${NCOLS}" class="muted">${board.length ? "No matches in this league." : "No matches stored yet. Click Fetch matches."}</td></tr>`);
   document.querySelectorAll("#board tr[data-key]").forEach(tr => tr.onclick = () => toggle(tr.dataset.key));
   if (open) wireFold();
+  const again = mk ? document.querySelector(`#board [data-market="${mk}"]`) : focusId ? $(focusId) : null;
+  if (again) { again.focus(); if (caret != null) try { again.setSelectionRange(caret, caret); } catch {} }
 }
 
 function toggle(key) {

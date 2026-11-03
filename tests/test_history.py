@@ -102,3 +102,18 @@ def test_finished_uses_last_snapshot_and_odds_before_kickoff(tmp_path):
     assert m["probabilities"]["1"] == pytest.approx(0.40) and m["odds"] == {"1": 2.5}
     assert (m["hg"], m["ag"]) == (1, 0) and m["competition"] == "England 2"
     assert h.finished(competition="Spain") == []
+
+
+def test_rescheduled_match_is_pending_again(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    h.save_board([_row(key="espn:9", kickoff="2026-10-30T20:00:00+00:00")], "t1")
+    h.set_result("espn:9", None, None, "STATUS_POSTPONED")
+    h.save_board([_row(key="espn:9", kickoff="2026-11-02T20:00:00+00:00")], "t2")   # listed again, new date
+    assert [p["key"] for p in h.pending_results(NOW)] == ["espn:9"]
+
+
+def test_late_arriving_older_price_does_not_overwrite(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    h.record_odds("fd:1", "EUROPE", "A", "B", [_sel("1", 2.7)], "2026-11-03T12:00:05+00:00")
+    assert h.record_odds("fd:1", "EUROPE", "A", "B", [_sel("1", 2.0)], "2026-11-03T12:00:04+00:00") == 0
+    assert h.last_odds("fd:1", "EUROPE", "A", "B")["1"]["odds"] == 2.7

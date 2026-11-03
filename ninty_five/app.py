@@ -159,6 +159,9 @@ def ratings(dataset: str = "INTL", top: int = 50) -> list[dict]:
 
 @app.post("/api/evaluate")
 def evaluate_match(req: EvaluateIn) -> dict:
+    # Stamp typed odds on arrival: requests can finish out of order while the
+    # model is (re)fitting, and the newest typed price must win.
+    received = pd.Timestamp.now(tz="UTC").isoformat(timespec="milliseconds")
     m = get_model(req.dataset)
     try:
         lh, la = m.expected_goals(req.home, req.away, req.neutral)
@@ -172,8 +175,7 @@ def evaluate_match(req: EvaluateIn) -> dict:
     last_odds: dict = {}
     try:
         last_odds = history.last_odds(req.match_key, req.dataset, req.home, req.away)
-        now = pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds")
-        history.record_odds(req.match_key, req.dataset, req.home, req.away, [s.to_dict() for s in selections], now)
+        history.record_odds(req.match_key, req.dataset, req.home, req.away, [s.to_dict() for s in selections], received)
     except Exception as exc:  # history must never break pricing
         log.warning("could not record odds: %s", exc)
 

@@ -190,22 +190,28 @@ def goals_90(event: dict) -> tuple[int, int] | None:
             return None
     if status not in EXTRA_TIME:
         return None
+    try:
+        final = (int(sides["home"]["score"]), int(sides["away"]["score"]))
+    except (KeyError, TypeError, ValueError):
+        return None
     team_side = {sides["home"]["team"]["id"]: 0, sides["away"]["team"]["id"]: 1}
-    goals = [0, 0]
-    for d in comp.get("details", []):
+    goals, total = [0, 0], [0, 0]
+    for d in comp.get("details") or []:
         if not d.get("scoringPlay") or d.get("shootout"):
-            continue
-        minute = _minute((d.get("clock") or {}).get("displayValue", ""))
-        if minute is None:
-            return None
-        if minute > 90:
             continue
         if d.get("ownGoal"):
             return None
+        minute = _minute((d.get("clock") or {}).get("displayValue", ""))
         side = team_side.get((d.get("team") or {}).get("id"))
-        if side is None:
+        if minute is None or side is None:
             return None
-        goals[side] += 1
+        total[side] += 1
+        if minute <= 90:
+            goals[side] += 1
+    # The goal list must account for the whole final score (extra time
+    # included); if ESPN's list is incomplete, a 90-minute score would be a guess.
+    if tuple(total) != final:
+        return None
     return goals[0], goals[1]
 
 

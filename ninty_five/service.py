@@ -180,8 +180,8 @@ def update_results(history, bets, now: pd.Timestamp) -> list[int]:
     found: dict[str, tuple[int, int]] = {}
     settled: list[int] = []
 
-    try:  # clubs (football-data.org allows at most 10 days per call)
-        club = results_frame(days=10)
+    try:  # clubs: same 14-day window as pending_results
+        club = results_frame(days=14)
         settled += bets.auto_settle(club)  # bets logged before match keys existed
         by_id = {int(r.match_id): (int(r.hg), int(r.ag)) for r in club.itertuples()}
         for p in pending:

@@ -220,9 +220,12 @@ def upcoming(days: int = 7, competitions: list[str] | None = None) -> pd.DataFra
 def recent_results(days: int = 7) -> pd.DataFrame:
     """Finished matches over the last `days` days, for auto-settling bets."""
     end = pd.Timestamp.today().normalize() + pd.Timedelta(days=1)
-    start = end - pd.Timedelta(days=min(days, 10))
-    payload = _get(
-        "/matches", {"dateFrom": start.date(), "dateTo": end.date(), "competitions": ",".join(COMPETITIONS)}
-    )
-    df = parse_matches(payload)
+    start = end - pd.Timedelta(days=days)
+    frames = []
+    while end > start:  # the API allows at most 10 days per call
+        a = max(start, end - pd.Timedelta(days=10))
+        payload = _get("/matches", {"dateFrom": a.date(), "dateTo": end.date(), "competitions": ",".join(COMPETITIONS)})
+        frames.append(parse_matches(payload))
+        end = a
+    df = pd.concat(frames, ignore_index=True).drop_duplicates("match_id")
     return df[df["status"].isin(FINISHED)].dropna(subset=["hg", "ag"])
