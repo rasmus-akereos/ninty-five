@@ -6,12 +6,14 @@ import logging
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from . import fixtures, service
 from .model import DixonColes, markets
+from .history import HistoryStore
 from .store import BetStore
 from .value import Settings, evaluate, overround
 
@@ -19,6 +21,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="ninty-five")
 store = BetStore()
+history = HistoryStore()
 log = logging.getLogger("ninty_five")
 
 
@@ -47,6 +50,7 @@ class EvaluateIn(BaseModel):
     neutral: bool = False
     odds: dict[str, float] = {}
     settings: SettingsIn = SettingsIn()
+    match_key: str | None = None  # board match the odds belong to (fd:/espn:)
 
 
 class BetIn(BaseModel):
@@ -61,6 +65,7 @@ class BetIn(BaseModel):
     ev: float | None = None
     match_id: int | None = None
     kickoff: str | None = None
+    match_key: str | None = None
 
 
 class SettleIn(BaseModel):
@@ -81,22 +86,37 @@ def datasets() -> dict[str, str]:
     return service.datasets()
 
 
+STALE_AFTER = pd.Timedelta(hours=6)
+
+
+def _stored_board(days: int, min_edge: float) -> dict:
+    fetched = history.fetched_at()
+    stale = fetched is None or pd.Timestamp.now(tz="UTC") - pd.Timestamp(fetched) > STALE_AFTER
+    return {
+        "fixtures": service.with_min_odds(history.board(days), min_edge),
+        "fetched_at": fetched,
+        "stale": stale,
+    }
+
+
 @app.get("/api/fixtures")
 def fixture_board(days: int = 7, min_edge: float = 0.08) -> dict:
-    """Upcoming club and national-team matches with model prices. Also settles any
-    open bets whose matches have finished."""
+    """The stored board: upcoming matches from the last fetch with their latest
+    model prices and form. Never contacts the fixture sources."""
+    return _stored_board(days, min_edge)
+
+
+@app.post("/api/fixtures/refresh")
+def refresh_fixture_board(days: int = 7, min_edge: float = 0.08) -> dict:
+    """Fetch fresh fixtures, store a snapshot of every match, fetch results and
+    settle finished bets, then return the stored board."""
     try:
-        rows, warnings = service.board(days=days, min_edge=min_edge)
+        out = service.refresh_board(history, store, days)
     except fixtures.ApiKeyMissing as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(502, f"Could not fetch fixtures: {exc}") from exc
-    settled: list[int] = []
-    try:
-        settled = store.auto_settle(service.results_frame())
-    except Exception as exc:  # settlement is best effort
-        log.warning("auto-settle failed: %s", exc)
-    return {"fixtures": rows, "warnings": warnings, "auto_settled": settled}
+    return {**_stored_board(days, min_edge), "warnings": out["warnings"], "auto_settled": out["auto_settled"]}
 
 
 @app.get("/api/teams")
@@ -127,6 +147,14 @@ def evaluate_match(req: EvaluateIn) -> dict:
     probs = markets(sm)
     odds = {k: v for k, v in req.odds.items() if v and v > 1}
     selections = evaluate(probs, odds, Settings(**req.settings.model_dump()))
+    # Previous visit's prices are shown as hints, so read them before storing.
+    last_odds: dict = {}
+    try:
+        last_odds = history.last_odds(req.match_key, req.dataset, req.home, req.away)
+        now = pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds")
+        history.record_odds(req.match_key, req.dataset, req.home, req.away, [s.to_dict() for s in selections], now)
+    except Exception as exc:  # history must never break pricing
+        log.warning("could not record odds: %s", exc)
 
     flat = [(int(i), int(j), float(sm[i, j])) for i, j in np.ndindex(sm.shape)]
     top_scores = sorted(flat, key=lambda t: -t[2])[:8]
@@ -146,6 +174,7 @@ def evaluate_match(req: EvaluateIn) -> dict:
         "top_scores": [{"score": f"{i}-{j}", "p": p} for i, j, p in top_scores],
         "margins": margins,
         "selections": [s.to_dict() for s in selections],
+        "last_odds": last_odds,
     }
 
 

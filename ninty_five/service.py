@@ -171,5 +171,24 @@ def board(days: int = 7, min_edge: float = 0.08) -> tuple[list[dict], list[str]]
     return with_min_odds(rows, min_edge), warnings
 
 
+def update_results(history, bets, now: pd.Timestamp) -> list[int]:
+    """Fetch results for finished board matches and settle bets."""
+    return bets.auto_settle(results_frame())
+
+
+def refresh_board(history, bets, days: int, now: pd.Timestamp | None = None) -> dict:
+    """Fetch a fresh board, store it (snapshots included), then fetch results
+    and auto-settle bets. Result failures never fail the refresh."""
+    now = now or pd.Timestamp.now(tz="UTC")
+    rows, warnings = build_board(days)
+    snapshots = history.save_board(rows, now.isoformat(timespec="seconds"))
+    settled: list[int] = []
+    try:
+        settled = update_results(history, bets, now)
+    except Exception as exc:  # best effort
+        warnings.append(f"Results unavailable: {exc}")
+    return {"warnings": warnings, "auto_settled": settled, "snapshots": snapshots}
+
+
 def results_frame(days: int = 7) -> pd.DataFrame:
     return fixtures.recent_results(days)
