@@ -18,7 +18,8 @@ Success: the board lists the new leagues' matches with model prices, each under 
 ## Non-goals
 
 - The four non-English third tiers (3. Liga, Primera Federación, Serie C, National): no free source exists (checked 2026-11-03 against football-data.org's free tier, ESPN and football-data.co.uk). Not attempted.
-- The Danish 1. Division: ESPN lists the competition (`den.2`) but carries no matches for it, and football-data.co.uk has only the Superliga (checked 2026-11-03). Not attempted.
+- The Danish 1. Division: football-data.co.uk has only the Superliga, and ESPN lists the competition (`den.2`) but carries no matches for it (checked 2026-11-03). Not attempted.
+- ESPN for the new leagues, and a paid football-data.org plan. The user chose football-data.co.uk alone (free); a paid plan (fixtures a week ahead, faster results) may come later if betting on these leagues turns out profitable. The design should not make that switch harder than replacing the fixtures/results source.
 - Cup competitions (FA Cup, DFB-Pokal, …), play-offs.
 - Running the app online (a later, separate project). The daily fetch must not assume anything that would stop it working on a server later.
 - Changing how existing leagues, national teams, the Champions League or any calculation work.
@@ -33,26 +34,28 @@ Success: the board lists the new leagues' matches with model prices, each under 
 
 - The six leagues above plus the Danish Superliga; third tiers outside England dropped.
 - Layout: each new league gets its own league button.
+- Source: football-data.co.uk only, for fixtures, results and history (no ESPN, no paid plan for now). Accepted consequences: the new leagues' matches appear on the board only about 2–3 days before kick-off, and their bets settle a day or two after the match.
 - Daily fetch happens inside the app while it runs (the user's computer is usually on); hosting online comes later.
 - The design below was played back to and confirmed by the user.
 - A division that fails validation is shown with a "model unproven" tag rather than hidden.
 
 ## Data sources (verified 2026-11-03)
 
-| League | Board label (my call) | Fixtures + results (ESPN slug) | History CSV (football-data.co.uk) |
+| League | Board label (my call) | Division code (football-data.co.uk) | Results + history file |
 |---|---|---|---|
-| League One | England 3 | `eng.3` | `E2` |
-| League Two | England 4 | `eng.4` | `E3` |
-| 2. Bundesliga | Germany 2 | `ger.2` | `D2` |
-| Segunda División | Spain 2 | `esp.2` | `SP2` |
-| Serie B | Italy 2 | `ita.2` | `I2` |
-| Ligue 2 | France 2 | `fra.2` | `F2` |
-| Superliga | Denmark 1 | `den.1` | `new/DNK.csv` |
+| League One | England 3 | `E2` | `mmz4281/<season>/E2.csv` |
+| League Two | England 4 | `E3` | `mmz4281/<season>/E3.csv` |
+| 2. Bundesliga | Germany 2 | `D2` | `mmz4281/<season>/D2.csv` |
+| Segunda División | Spain 2 | `SP2` | `mmz4281/<season>/SP2.csv` |
+| Serie B | Italy 2 | `I2` | `mmz4281/<season>/I2.csv` |
+| Ligue 2 | France 2 | `F2` | `mmz4281/<season>/F2.csv` |
+| Superliga | Denmark 1 | Denmark / Superliga | `new/DNK.csv` |
 
 - Denmark: `new/DNK.csv` is football-data.co.uk's "extra leagues" format: one file with every season since 2012/13 (columns `Season, Date, Time, Home, Away, HG, AG, Res`, closing odds), not one file per season, and it holds only the Superliga. The loader needs a small reader for this format; the current season is refreshed by re-downloading the same file. It includes the championship and relegation rounds after the split, which count as ordinary Superliga matches.
-- ESPN: same keyless scoreboard JSON used for national teams (`intl_fixtures.py`): month form `dates=YYYYMM&limit=1000` works, range form is broken. These leagues have no extra time, so full-time score = 90-minute score.
+- **Fixtures:** `fixtures.csv` (main-league format: `Div, Date, Time, HomeTeam, AwayTeam, …`; holds E2, E3, D2, SP2, I2, F2 among others) and `new_league_fixtures.csv` (extra-league format: `Country, League, Date, Time, Home, Away, …`; holds Denmark). Both are published roughly twice a week, just before each round, and only hold the next few days' matches (on 2026-11-03 they held 3–6 November). Dates are dd/mm/yyyy; times are UK time (to be confirmed by the builder against a known kick-off and converted).
+- **Results:** the same season CSVs the model trains on, updated a day or two after each round. These leagues have no extra time, so the full-time score is the 90-minute score.
 - football-data.co.uk: regular-season CSVs for 2023/24 onwards confirmed for all six (the `www.` host now redirects; urllib follows it). Top-division codes for the same countries: `E0`, `E1`, `D1`, `SP1`, `I1`, `F1`.
-- Team names differ between the two sources for most clubs (e.g. ESPN "Sheffield Wednesday" vs CSV "Sheffield Weds", "1. FC Nürnberg" vs "Nurnberg", "RC Celta Fortuna" vs "Celta B"). A fuzzy pairing found the right partner for every club in the check.
+- Fixtures, results and history all come from one site with the same team names, so no name mapping is needed.
 
 ## Design
 
@@ -68,17 +71,10 @@ Promoted and relegated clubs link the divisions, so the model learns how much st
 
 ### Fixtures and results
 
-- Generalise the ESPN client in `intl_fixtures.py` so the same fetching/caching/parsing serves both national teams and club leagues (slug list per use). Club rows get key `espn:<event id>`, dataset = the country key, competition = the board label above, no neutral venue.
-- Results for these keys come from ESPN in `update_results` exactly like national-team results (keys already start with `espn:`), so auto-settlement and the track record need no new logic.
-
-### Team names
-
-At board-building time, map each ESPN team name to the country model's team name:
-1. an explicit alias table per league (for names the matcher gets wrong or can't decide),
-2. otherwise the existing lenient matcher (`import_odds.same_team`) against that model's teams **of the same division** (restricting the candidates avoids "Sporting"-style cross-matches),
-3. a name that matches no team or more than one → the fixture is shown **unrated**, and the board info line carries a warning naming it, so the alias table can be extended.
-
-The board, bet log and track record show the ESPN (long-form) names. The model name is stored alongside on every board row and in the `matches` table (`model_home`, `model_away`), and every path that prices a match (fold-down evaluation, odds history, logged bets) sends the model names, so `/api/evaluate` and the bet log keep working (my call).
+- A new module reads the two fixtures files, keeps the seven divisions, and builds board rows: dataset = the country key, competition = the board label above, no neutral venue, team names as in the file (they are the model's names, so pricing, evaluation, odds history and bets work unchanged).
+- Key: `fdcu:<division>:<kick-off date>:<home>:<away>` (my call; the files carry no match id). The date is part of it because Superliga teams can meet at the same ground twice in a season (after the split).
+- Results: `update_results` looks up pending `fdcu:` matches in the division's results file by division + home + away, taking the result whose date is closest to the stored kick-off within 30 days. That way a match moved to another day still gets its result and its bets still settle. A match with no result 30 days after kick-off is marked called off, like other sources' called-off matches (my call). Auto-settlement then reuses the existing key-based path.
+- The files are fetched together, a handful of downloads per run, with the same timeouts and failure-as-warning behaviour as the other sources.
 
 ### Validation
 
@@ -95,6 +91,6 @@ Run the existing walk-forward backtest per country model and record 1X2 log loss
 
 ## Left to the builder
 
-- Module layout (e.g. a shared `espn.py` used by `intl_fixtures.py` and a new `league_fixtures.py`), the alias table format, table/column names for storing daily-run outcomes.
+- Module layout (e.g. a new `league_fixtures.py`), how the fixtures files are cached between the daily run and a manual refresh, table/column names for storing daily-run outcomes.
 - How the lock is shared between the thread and the refresh endpoint.
-- Tests in the existing pytest style (monkeypatched sources, no network), including name mapping, unrated-on-ambiguity, the start-up catch-up rule and the 07:00 schedule.
+- Tests in the existing pytest style (monkeypatched sources, no network), including both fixtures-file formats, a result found for a moved match, the 30-day called-off rule, the start-up catch-up rule and the 07:00 schedule.
