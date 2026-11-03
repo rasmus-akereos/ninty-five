@@ -50,7 +50,7 @@ def client(tmp_path, monkeypatch):
 
 def test_get_board_empty_db(client):
     r = client.get("/api/fixtures").json()
-    assert r == {"fixtures": [], "fetched_at": None, "stale": True}
+    assert r == {"fixtures": [], "fetched_at": None, "stale": True, "last_auto": None}
 
 
 def test_refresh_then_get_serves_stored(client, monkeypatch):
@@ -142,3 +142,15 @@ def test_board_unvalidated_new_division_is_unproven(client, monkeypatch):
     monkeypatch.setattr(service, "build_board", lambda days: ([_league_row("fdcu:F2:x", "France 2")], []))
     f = client.post("/api/fixtures/refresh").json()["fixtures"][0]
     assert f["unproven"] == {"model": None, "baseline": None}
+
+
+def test_refresh_while_leased(client, monkeypatch):
+    app_mod.history.take_lease("refresh", "auto-1", pd.Timestamp.now(tz="UTC"))
+    monkeypatch.setattr(service, "build_board", lambda days: pytest.fail("must not fetch"))
+    r = client.post("/api/fixtures/refresh")
+    assert r.status_code == 200 and r.json()["warnings"] == ["Refresh already running"]
+
+
+def test_board_shows_last_auto_run(client):
+    app_mod.history.record_run("auto", "2026-11-03T06:00:00+00:00", "2026-11-03T06:01:00+00:00", 40, [], None)
+    assert client.get("/api/fixtures").json()["last_auto"]["finished"] == "2026-11-03T06:01:00+00:00"

@@ -60,6 +60,20 @@ CREATE TABLE IF NOT EXISTS odds_entries (
 );
 CREATE INDEX IF NOT EXISTS odds_identity ON odds_entries(match_key, dataset, home, away, market, id);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS leases (
+    name TEXT PRIMARY KEY,         -- e.g. 'refresh': one fetch at a time
+    holder TEXT NOT NULL,
+    taken_at TEXT NOT NULL         -- ISO UTC; older than the TTL = abandoned
+);
+CREATE TABLE IF NOT EXISTS fetch_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,            -- 'auto' (daily) | 'manual' (Refresh button)
+    started TEXT NOT NULL,
+    finished TEXT NOT NULL,
+    matches INTEGER NOT NULL,
+    warnings TEXT NOT NULL,        -- JSON list
+    error TEXT                     -- NULL when the run succeeded
+);
 """
 
 
@@ -135,6 +149,53 @@ class HistoryStore:
         with self._conn() as c:
             row = c.execute("SELECT value FROM meta WHERE key = 'validation'").fetchone()
         return json.loads(row["value"]) if row else {}
+
+    # ------------------------------------------------------ lease / runs
+    @staticmethod
+    def _iso(t: pd.Timestamp) -> str:
+        return pd.Timestamp(t).tz_convert("UTC").isoformat(timespec="seconds")
+
+    def take_lease(self, name: str, holder: str, now: pd.Timestamp,
+                   ttl: pd.Timedelta = pd.Timedelta(minutes=30)) -> bool:
+        """Take the named lease unless someone else holds a live one."""
+        with self._conn() as c:
+            c.execute(
+                """INSERT INTO leases (name, holder, taken_at) VALUES (?, ?, ?)
+                   ON CONFLICT(name) DO UPDATE SET holder = excluded.holder, taken_at = excluded.taken_at
+                   WHERE leases.taken_at < ? OR leases.holder = excluded.holder""",
+                (name, holder, self._iso(now), self._iso(now - ttl)),
+            )
+            row = c.execute("SELECT holder FROM leases WHERE name = ?", (name,)).fetchone()
+        return row["holder"] == holder
+
+    def release_lease(self, name: str, holder: str) -> None:
+        with self._conn() as c:
+            c.execute("DELETE FROM leases WHERE name = ? AND holder = ?", (name, holder))
+
+    def record_run(self, kind: str, started: str, finished: str, matches: int,
+                   warnings: list[str], error: str | None) -> None:
+        with self._conn() as c:
+            c.execute("INSERT INTO fetch_runs (kind, started, finished, matches, warnings, error) "
+                      "VALUES (?, ?, ?, ?, ?, ?)", (kind, started, finished, matches, json.dumps(warnings), error))
+
+    def last_run(self, kind: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM fetch_runs WHERE kind = ? ORDER BY id DESC LIMIT 1", (kind,)).fetchone()
+        if not row:
+            return None
+        out = dict(row)
+        out["warnings"] = json.loads(out["warnings"])
+        return out
+
+    def last_success(self, kind: str | None = None) -> str | None:
+        """Finish time of the latest successful run (of `kind`, or any)."""
+        sql = "SELECT finished FROM fetch_runs WHERE error IS NULL"
+        args: tuple = ()
+        if kind:
+            sql, args = sql + " AND kind = ?", (kind,)
+        with self._conn() as c:
+            row = c.execute(sql + " ORDER BY finished DESC LIMIT 1", args).fetchone()
+        return row["finished"] if row else None
 
     def fetched_at(self) -> str | None:
         with self._conn() as c:

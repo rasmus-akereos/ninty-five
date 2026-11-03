@@ -163,3 +163,43 @@ def test_league_board_carries_unmatched(monkeypatch):
     up["unmatched"] = ["Newcomers"]
     monkeypatch.setattr(league_fixtures, "upcoming", lambda days, now=None: up)
     assert service.league_board(7)[0]["unmatched"] == "Newcomers"
+
+
+def test_run_refresh_records_success_and_failure(tmp_path, monkeypatch):
+    db = tmp_path / "b.sqlite"
+    h, bets = HistoryStore(db), BetStore(db)
+    monkeypatch.setattr(service, "refresh_board", lambda history, bets, days, now=None: {
+        "warnings": ["w"], "auto_settled": [], "snapshots": 3, "matches": 12})
+    out = service.run_refresh(h, bets, 7, "auto", now=pd.Timestamp("2026-11-03T06:00Z"))
+    assert out["matches"] == 12
+    run = h.last_run("auto")
+    assert run["matches"] == 12 and run["warnings"] == ["w"] and run["error"] is None
+
+    def broken(history, bets, days, now=None):
+        raise RuntimeError("all down")
+
+    monkeypatch.setattr(service, "refresh_board", broken)
+    with pytest.raises(RuntimeError):
+        service.run_refresh(h, bets, 7, "auto", now=pd.Timestamp("2026-11-03T07:00Z"))
+    assert h.last_run("auto")["error"] == "all down"
+    # the lease was released despite the failure
+    assert h.take_lease("refresh", "x", pd.Timestamp("2026-11-03T07:01Z"))
+
+
+def test_run_refresh_skips_when_leased(tmp_path, monkeypatch):
+    db = tmp_path / "b.sqlite"
+    h, bets = HistoryStore(db), BetStore(db)
+    h.take_lease("refresh", "other", pd.Timestamp.now(tz="UTC"))
+    monkeypatch.setattr(service, "refresh_board", lambda *a, **k: pytest.fail("must not fetch"))
+    assert service.run_refresh(h, bets, 7, "manual") is None
+
+
+def test_run_refresh_refits_country_models(tmp_path, monkeypatch):
+    db = tmp_path / "b.sqlite"
+    h, bets = HistoryStore(db), BetStore(db)
+    refits = []
+    monkeypatch.setattr(service, "_cached", lambda key, refresh=False: refits.append((key, refresh)))
+    monkeypatch.setattr(service, "refresh_board", lambda history, bets, days, now=None: {
+        "warnings": [], "auto_settled": [], "snapshots": 0, "matches": 0})
+    service.run_refresh(h, bets, 7, "auto", refit_countries=True)
+    assert refits == [(k, "current") for k in ["ENG", "GER", "ESP", "ITA", "FRA", "DEN"]]

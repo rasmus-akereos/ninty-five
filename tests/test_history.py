@@ -117,3 +117,42 @@ def test_late_arriving_older_price_does_not_overwrite(tmp_path):
     h.record_odds("fd:1", "EUROPE", "A", "B", [_sel("1", 2.7)], "2026-11-03T12:00:05+00:00")
     assert h.record_odds("fd:1", "EUROPE", "A", "B", [_sel("1", 2.0)], "2026-11-03T12:00:04+00:00") == 0
     assert h.last_odds("fd:1", "EUROPE", "A", "B")["1"]["odds"] == 2.7
+
+
+# ------------------------------------------------------------- lease / runs
+def _t(s):
+    return pd.Timestamp(s, tz="UTC")
+
+
+def test_lease_exclusive(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    assert h.take_lease("refresh", "auto-1", _t("2026-11-03 07:00"))
+    assert not h.take_lease("refresh", "manual-1", _t("2026-11-03 07:05"))
+    h.release_lease("refresh", "auto-1")
+    assert h.take_lease("refresh", "manual-1", _t("2026-11-03 07:06"))
+
+
+def test_lease_abandoned_after_30_minutes(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    assert h.take_lease("refresh", "crashed", _t("2026-11-03 07:00"))
+    assert not h.take_lease("refresh", "next", _t("2026-11-03 07:29"))
+    assert h.take_lease("refresh", "next", _t("2026-11-03 07:31"))
+
+
+def test_release_only_by_holder(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    h.take_lease("refresh", "auto-1", _t("2026-11-03 07:00"))
+    h.release_lease("refresh", "someone-else")
+    assert not h.take_lease("refresh", "manual-1", _t("2026-11-03 07:01"))
+
+
+def test_runs_recorded(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    assert h.last_run("auto") is None and h.last_success() is None
+    h.record_run("auto", "2026-11-02T07:00:00+00:00", "2026-11-02T07:01:00+00:00", 40, [], None)
+    h.record_run("manual", "2026-11-03T09:00:00+00:00", "2026-11-03T09:01:00+00:00", 41, ["x"], None)
+    h.record_run("auto", "2026-11-03T07:00:00+00:00", "2026-11-03T07:00:30+00:00", 0, [], "boom")
+    assert h.last_run("auto")["error"] == "boom"
+    assert h.last_success("auto") == "2026-11-02T07:01:00+00:00"
+    assert h.last_success() == "2026-11-03T09:01:00+00:00"
+    assert h.last_run("manual")["warnings"] == ["x"] and h.last_run("manual")["matches"] == 41

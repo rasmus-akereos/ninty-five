@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import uuid
 
 import pandas as pd
 
@@ -284,7 +285,37 @@ def refresh_board(history, bets, days: int, now: pd.Timestamp | None = None) -> 
         settled = update_results(history, bets, now)
     except Exception as exc:  # best effort
         warnings.append(f"Results unavailable: {exc}")
-    return {"warnings": warnings, "auto_settled": settled, "snapshots": snapshots}
+    return {"warnings": warnings, "auto_settled": settled, "snapshots": snapshots, "matches": len(rows)}
+
+
+def run_refresh(history, bets, days: int, kind: str, now: pd.Timestamp | None = None,
+                refit_countries: bool = False) -> dict | None:
+    """One guarded refresh (daily or manual): None if another is running.
+    The daily run first refits the country models on fresh current-season
+    data. Every run's outcome is recorded; a failure is re-raised."""
+    holder = f"{kind}-{uuid.uuid4().hex[:8]}"
+    started = now or pd.Timestamp.now(tz="UTC")
+    if not history.take_lease("refresh", holder, started):
+        return None
+    iso = lambda t: t.isoformat(timespec="seconds")  # noqa: E731
+    try:
+        warnings: list[str] = []
+        if refit_countries:
+            for key in data_mod.COUNTRIES:
+                try:
+                    _cached(key, refresh="current")
+                except Exception as exc:  # keep the previous model
+                    warnings.append(f"Could not update {key} data: {exc}")
+        out = refresh_board(history, bets, days, now=now)
+        out["warnings"] = warnings + out["warnings"]
+        history.record_run(kind, iso(started), iso(pd.Timestamp.now(tz="UTC")), out.get("matches", 0),
+                           out["warnings"], None)
+        return out
+    except Exception as exc:
+        history.record_run(kind, iso(started), iso(pd.Timestamp.now(tz="UTC")), 0, [], str(exc) or type(exc).__name__)
+        raise
+    finally:
+        history.release_lease("refresh", holder)
 
 
 def results_frame(days: int = 7) -> pd.DataFrame:

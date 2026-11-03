@@ -102,6 +102,7 @@ def _stored_board(days: int, min_edge: float) -> dict:
         "fixtures": rows,
         "fetched_at": fetched,
         "stale": stale,
+        "last_auto": history.last_run("auto"),
     }
 
 
@@ -117,11 +118,13 @@ def refresh_fixture_board(days: int = 7, min_edge: float = 0.08) -> dict:
     """Fetch fresh fixtures, store a snapshot of every match, fetch results and
     settle finished bets, then return the stored board."""
     try:
-        out = service.refresh_board(history, store, days)
+        out = service.run_refresh(history, store, days, kind="manual")
     except fixtures.ApiKeyMissing as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(502, f"Could not fetch fixtures: {exc}") from exc
+    if out is None:
+        return {**_stored_board(days, min_edge), "warnings": ["Refresh already running"], "auto_settled": []}
     return {**_stored_board(days, min_edge), "warnings": out["warnings"], "auto_settled": out["auto_settled"]}
 
 
