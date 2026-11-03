@@ -83,6 +83,7 @@ class SettleIn(BaseModel):
     away_goals: int | None = None
     closing_odds: float | None = None
     void: bool = False
+    cash_out: float | None = Field(None, ge=0)  # Take Profit: amount paid out
 
 
 # ------------------------------------------------------------------ routes
@@ -248,6 +249,9 @@ def add_bet(bet: BetIn) -> dict:
 
 @app.post("/api/bets/{bet_id}/settle")
 def settle_bet(bet_id: int, req: SettleIn) -> dict:
+    scored = req.home_goals is not None and req.away_goals is not None
+    if not (scored or req.void or req.cash_out is not None or req.closing_odds is not None):
+        raise HTTPException(400, "Nothing to settle: give a score, void, a Take Profit amount or closing odds")
     try:
         return store.settle(bet_id, **req.model_dump())
     except KeyError as exc:

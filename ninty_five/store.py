@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS bets (
     closing_odds REAL,
     home_goals INTEGER,
     away_goals INTEGER,
-    status TEXT NOT NULL DEFAULT 'open',  -- open | won | lost | void
+    status TEXT NOT NULL DEFAULT 'open',  -- open | won | lost | void | took profit
     pnl REAL,
     match_id INTEGER,  -- football-data.org id, enables auto-settlement
     kickoff TEXT,
@@ -124,13 +124,18 @@ class BetStore:
         away_goals: int | None = None,
         closing_odds: float | None = None,
         void: bool = False,
+        cash_out: float | None = None,
     ) -> dict:
+        """Settle on the 90-minute score, void it, or close it early with
+        Danske Spil's Take Profit (`cash_out` = the amount paid out)."""
         with self._conn() as c:
             row = c.execute("SELECT * FROM bets WHERE id = ?", (bet_id,)).fetchone()
             if row is None:
                 raise KeyError(bet_id)
             if void:
                 status, pnl = "void", 0.0
+            elif cash_out is not None:
+                status, pnl = "took profit", float(cash_out) - row["stake"]
             elif home_goals is not None and away_goals is not None:
                 won = settle(row["market"], home_goals, away_goals)
                 if won is None:
@@ -159,7 +164,7 @@ class BetStore:
 
     def summary(self) -> dict:
         bets = self.list()
-        settled = [b for b in bets if b["status"] in ("won", "lost")]
+        settled = [b for b in bets if b["status"] in ("won", "lost", "took profit")]
         staked = sum(b["stake"] for b in settled)
         pnl = sum(b["pnl"] for b in settled)
         expected = sum(b["stake"] * b["ev"] for b in settled if b["ev"] is not None)

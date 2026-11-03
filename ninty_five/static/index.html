@@ -673,6 +673,16 @@ async function settle(id) {
   loadBets();
 }
 
+// Closed early with Danske Spil's Take Profit: P/L = amount paid out - stake.
+async function tookProfit(id) {
+  const amount = prompt("Amount Danske Spil paid out when you took profit (kr)");
+  if (!amount) return;
+  const cash_out = parseFloat(amount.replace(",", "."));
+  if (!(cash_out >= 0)) { alert("Enter the amount in kr, e.g. 30,50"); return; }
+  try { await api(`/api/bets/${id}/settle`, { method: "POST", body: JSON.stringify({ cash_out }) }); } catch (e) { alert(e.message); }
+  loadBets();
+}
+
 async function del(id) {
   if (!confirm("Delete this bet?")) return;
   await api(`/api/bets/${id}`, { method: "DELETE" });
@@ -715,6 +725,7 @@ async function loadBets() {
       <td>${b.status}${b.home_goals != null ? ` (${b.home_goals}-${b.away_goals})` : ""}</td>
       <td class="${(b.pnl || 0) >= 0 ? "pos" : "neg"}">${num(b.pnl, 0)}</td>
       <td><button class="small secondary" onclick="settle(${b.id})">Settle</button>
+          ${b.status === "open" ? `<button class="small secondary" onclick="tookProfit(${b.id})" title="Closed early with Danske Spil's Take Profit">Took profit</button>` : ""}
           <button class="small secondary" onclick="del(${b.id})">✕</button></td></tr>`).join("")
     : `<tr><td class="muted">No bets logged yet.</td></tr>`;
 }

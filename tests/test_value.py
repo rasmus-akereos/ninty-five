@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 
 from ninty_five.store import BetStore
@@ -40,3 +41,16 @@ def test_store_roundtrip(tmp_path):
     assert s["staked"] == 10 and s["open_staked"] == 0
     assert s["pnl"] == pytest.approx(10)
     assert s["avg_clv"] == pytest.approx(2.0 / 1.8 - 1, abs=1e-4)
+
+
+def test_took_profit_counts_payout_minus_stake(tmp_path):
+    st = BetStore(tmp_path / "b.sqlite")
+    bid = st.add({"dataset": "EUROPE", "home": "A", "away": "B", "market": "Over 2.5", "odds": 1.33, "stake": 25,
+                  "match_id": 7})
+    b = st.settle(bid, cash_out=30.5)
+    assert b["status"] == "took profit" and b["pnl"] == pytest.approx(5.5)
+    s = st.summary()
+    assert s["staked"] == 25 and s["pnl"] == pytest.approx(5.5) and s["open_staked"] == 0
+    # auto-settlement never overrides a closed bet
+    assert st.auto_settle(pd.DataFrame([{"match_id": 7, "hg": 0, "ag": 0}])) == []
+    assert st.list()[0]["status"] == "took profit"

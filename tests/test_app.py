@@ -154,3 +154,19 @@ def test_refresh_while_leased(client, monkeypatch):
 def test_board_shows_last_auto_run(client):
     app_mod.history.record_run("auto", "2026-11-03T06:00:00+00:00", "2026-11-03T06:01:00+00:00", 40, [], None)
     assert client.get("/api/fixtures").json()["last_auto"]["finished"] == "2026-11-03T06:01:00+00:00"
+
+
+def test_took_profit_endpoint(client):
+    bid = client.post("/api/bets", json={"dataset": "EUROPE", "home": "A", "away": "B", "market": "1",
+                                         "odds": 1.37, "stake": 25}).json()["id"]
+    r = client.post(f"/api/bets/{bid}/settle", json={"cash_out": 20}).json()
+    assert r["status"] == "took profit" and r["pnl"] == pytest.approx(-5)
+    assert client.post(f"/api/bets/{bid}/settle", json={"cash_out": -1}).status_code == 422
+
+
+def test_settle_with_nothing_to_do_is_rejected(client):
+    bid = client.post("/api/bets", json={"dataset": "EUROPE", "home": "A", "away": "B", "market": "1",
+                                         "odds": 1.37, "stake": 25}).json()["id"]
+    r = client.post(f"/api/bets/{bid}/settle", json={"unknown_field": 20})
+    assert r.status_code == 400
+    assert client.get("/api/bets").json()["bets"][0]["status"] == "open"
