@@ -107,6 +107,9 @@ def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings)
         kelly = max(ev / (o - 1), 0.0)
         stake_pct = min(s.kelly_fraction * kelly, s.max_stake_pct)
         rec = ev >= s.min_edge
+        # Whole kroner: that's how stakes are placed. A recommended bet never
+        # rounds down to nothing.
+        stake = float(max(1, round(stake_pct * s.bankroll))) if rec and stake_pct > 0 else 0.0
         rows.append(
             Selection(
                 market=name,
@@ -117,7 +120,7 @@ def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings)
                 fair_odds=1 / p if p > 0 else float("inf"),
                 ev=ev,
                 kelly=kelly,
-                stake=round(stake_pct * s.bankroll, 2) if rec else 0.0,
+                stake=stake,
                 recommended=bool(rec),
             )
         )

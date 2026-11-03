@@ -26,6 +26,7 @@ def test_evaluate_blend_ev_and_stake():
     assert home.ev == pytest.approx(home.p_blend * 2.10 - 1)
     assert home.recommended
     assert 0 < home.stake <= 30
+    assert home.stake == int(home.stake)  # whole kroner
     assert not rows["2"].recommended and rows["2"].stake == 0
 
 
