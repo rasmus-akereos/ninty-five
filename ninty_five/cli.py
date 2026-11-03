@@ -46,6 +46,32 @@ def backtest(dataset: str, start: str, step_months: int) -> None:
     )
 
 
+def print_fixtures(days: int, min_edge: float) -> None:
+    """Minimum odds list, e.g. for a morning cron job. Also auto-settles bets."""
+    from .service import board, results_frame
+    from .store import BetStore
+
+    settled = BetStore().auto_settle(results_frame())
+    if settled:
+        print(f"Auto-settled bets: {settled}\n")
+    cols = ["1", "X", "2", "Over 2.5", "Under 2.5", "BTTS Yes"]
+    rows = []
+    for f in board(days=days, min_edge=min_edge):
+        r = {
+            "kickoff": pd.Timestamp(f["kickoff"]).tz_convert("Europe/Copenhagen").strftime("%a %d %b %H:%M"),
+            "comp": f["competition"],
+            "match": f"{f['home']} - {f['away']}",
+        }
+        if f["rated"]:
+            r.update({c: round(f["min_odds"][c], 2) for c in cols})
+        rows.append(r)
+    if not rows:
+        print("No scheduled matches.")
+        return
+    print(f"Minimum odds worth betting at (model only, edge >= {min_edge:.0%}), Danish time:\n")
+    print(pd.DataFrame(rows).to_string(index=False))
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="ninty-five")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -55,6 +81,9 @@ def main() -> None:
     r = sub.add_parser("ratings", help="print team ratings")
     r.add_argument("--dataset", default="INTL")
     r.add_argument("--top", type=int, default=30)
+    f = sub.add_parser("fixtures", help="upcoming CL/top-league matches with minimum odds")
+    f.add_argument("--days", type=int, default=3)
+    f.add_argument("--min-edge", type=float, default=0.08)
     b = sub.add_parser("backtest", help="walk-forward log-loss test")
     b.add_argument("--dataset", default="INTL")
     b.add_argument("--start", default="2023-01-01")
@@ -66,9 +95,12 @@ def main() -> None:
 
         uvicorn.run("ninty_five.app:app", host=args.host, port=args.port)
     elif args.cmd == "ratings":
-        params = INTL_PARAMS if args.dataset.upper() == "INTL" else CLUB_PARAMS
-        m = DixonColes(**params).fit(load_dataset(args.dataset))
+        from .service import fit_dataset
+
+        m = fit_dataset(args.dataset)
         print(m.ratings().head(args.top).to_string(float_format="%.3f"))
+    elif args.cmd == "fixtures":
+        print_fixtures(args.days, args.min_edge)
     elif args.cmd == "backtest":
         backtest(args.dataset, args.start, args.step_months)
 

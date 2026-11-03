@@ -22,6 +22,34 @@ available", delete the half-created `.venv`, install the package it names
 (e.g. `python3.14-venv`) and retry, or use `uv venv` instead, which needs
 no extra system package.
 
+### Automatic fixtures (Champions League + top leagues)
+
+Add a football-data.org token to `.env` (git-ignored). Reuse the sweepstakes
+app's token straight from Secret Manager without printing it:
+
+```bash
+printf 'FOOTBALL_DATA_TOKEN=%s\n' "$(gcloud secrets versions access latest --secret=fd-token --project=<project>)" > .env
+chmod 600 .env
+```
+
+or register for a free key at https://www.football-data.org/client/register
+(see `.env.example`). Then click **Fetch matches**. The board lists upcoming
+Champions League, Premier League, Championship, Bundesliga, La Liga, Serie A,
+Ligue 1, Eredivisie and Primeira Liga games with the **minimum odds** worth
+betting at, so you only have to check Danske Spil's prices. Click a match to
+load it into the form and type the real odds. Bets logged from the board
+**settle automatically** once the result is in (90-minute score).
+
+The first fetch downloads three seasons (~27 requests). The free tier allows
+10 requests a minute, so expect about 3 minutes. After that only the current
+season is refreshed, at most every 6 hours. For a morning list in the terminal:
+
+```bash
+ninty-five fixtures --days 3
+```
+
+### Manual mode
+
 1. Pick a data set: **International** (every national team worldwide, so
    World Cup, Euros, qualifiers and Nations League) or a club league.
 2. Type the two teams. Tick *Neutral venue* for tournament matches.
@@ -101,6 +129,24 @@ counts is beating the bookmaker's own probabilities, which this data set
 cannot do because it has no odds. The bet log (CLV, below) is how you find
 out.
 
+**Europe (Champions League) data set.** Domestic leagues never play each
+other, so fitted separately every league averages to "0" and a mid-table
+Bundesliga side looks as strong as a mid-table Premier League side. The
+EUROPE data set fits all leagues and the Champions League **jointly**, with
+strengths split into a league offset plus a team deviation:
+
+```
+a_i = A_league(i) + u_i        d_i = D_league(i) + v_i
+penalty = (κ/2)·Σ(u² + v²) + (κ_league/2)·Σ(A² + D²)
+```
+
+Domestic games only inform the team deviations, because the league offset
+cancels within a league. Champions League games identify the league
+offsets. A club with little data is pulled toward its own league's level,
+not the overall average. Clubs from leagues outside the free tier (Denmark,
+Scotland, Belgium, ...) appear only through their CL games, are grouped as
+"OTHER" and flagged ⚠ for thin data. The CL final is treated as neutral.
+
 **Club leagues** use the Dixon-Coles paper's decay (half-life ≈ 1 year). They
 have not been tuned yet.
 
@@ -148,3 +194,8 @@ Kelly assumes `p` is exact, which it never is.
 * Team names must match the data source's spelling. The input box suggests
   names as you type.
 * No line-up, injury or xG data, only scorelines.
+* Automatic fixtures cover football-data.org's free-tier competitions only.
+  Internationals (qualifiers, Nations League) and the Danish Superliga stay
+  manual.
+* The EUROPE model's settings (half-life, κ, κ_league) are untuned
+  defaults. Run a backtest once a token is configured.

@@ -28,9 +28,12 @@ CREATE TABLE IF NOT EXISTS bets (
     home_goals INTEGER,
     away_goals INTEGER,
     status TEXT NOT NULL DEFAULT 'open',  -- open | won | lost | void
-    pnl REAL
+    pnl REAL,
+    match_id INTEGER,  -- football-data.org id, enables auto-settlement
+    kickoff TEXT
 );
 """
+MIGRATIONS = {"match_id": "INTEGER", "kickoff": "TEXT"}
 
 
 class BetStore:
@@ -39,6 +42,10 @@ class BetStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as c:
             c.executescript(SCHEMA)
+            have = {r["name"] for r in c.execute("PRAGMA table_info(bets)")}
+            for col, typ in MIGRATIONS.items():
+                if col not in have:
+                    c.execute(f"ALTER TABLE bets ADD COLUMN {col} {typ}")
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -46,7 +53,7 @@ class BetStore:
         return conn
 
     def add(self, bet: dict) -> int:
-        fields = ["dataset", "home", "away", "market", "odds", "stake", "p_model", "p_blend", "ev"]
+        fields = ["dataset", "home", "away", "market", "odds", "stake", "p_model", "p_blend", "ev", "match_id", "kickoff"]
         values = [bet.get(f) for f in fields]
         with self._conn() as c:
             cur = c.execute(
@@ -91,6 +98,17 @@ class BetStore:
                 (status, pnl, home_goals, away_goals, closing_odds, bet_id),
             )
             return dict(c.execute("SELECT * FROM bets WHERE id = ?", (bet_id,)).fetchone())
+
+    def auto_settle(self, results) -> list[int]:
+        """Settle open bets whose match_id appears in `results` (a DataFrame
+        with match_id, hg, ag holding 90-minute scores). Returns settled ids."""
+        by_id = {int(r.match_id): (int(r.hg), int(r.ag)) for r in results.itertuples()}
+        settled = []
+        for b in self.list():
+            if b["status"] == "open" and b["match_id"] in by_id:
+                self.settle(b["id"], *by_id[b["match_id"]])
+                settled.append(b["id"])
+        return settled
 
     def summary(self) -> dict:
         bets = self.list()

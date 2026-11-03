@@ -31,6 +31,17 @@ Fitting maximises a weighted log-likelihood
   identifies the model and shrinks teams with few matches toward average,
   which matters a lot for national teams that play ~10 games a year.
 
+Multi-league fits (e.g. Champions League + domestic leagues) pass `groups`,
+mapping each team to its domestic league. Strengths then decompose as
+
+    a_i = A_g(i) + u_i,      d_i = D_g(i) + v_i
+
+with the ridge kappa on the team deviations (u, v) and a weaker ridge
+kappa_group on the league offsets (A, D). Domestic matches only inform u, v
+(league offsets cancel within a league); European matches identify A, D. A
+club with few matches is shrunk to its *league's* level rather than to the
+overall average, which is what makes cross-league prices sensible.
+
 The Poisson part has a closed-form gradient and is fitted with L-BFGS. rho is
 then fitted as a 1-D problem holding the lambdas fixed (two-stage
 approximation; rho barely interacts with the strength parameters).
@@ -64,6 +75,7 @@ CLUB_PARAMS = {"half_life_days": 365.0, "kappa": 0.2}
 class DixonColes:
     half_life_days: float = 1095.0
     kappa: float = 0.2
+    kappa_group: float = 0.05
     competition_weights: dict[str, float] = field(
         default_factory=lambda: dict(DEFAULT_COMPETITION_WEIGHTS)
     )
@@ -77,6 +89,8 @@ class DixonColes:
     rho: float = 0.0
     as_of: pd.Timestamp | None = None
     n_matches: dict[str, float] = field(default_factory=dict)
+    groups: dict[str, str] = field(default_factory=dict)
+    group_strength: dict[str, tuple[float, float]] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ fit
     def _weights(self, df: pd.DataFrame, as_of: pd.Timestamp) -> np.ndarray:
@@ -85,7 +99,12 @@ class DixonColes:
         comp = df["competition"].map(self.competition_weights).fillna(1.0).to_numpy()
         return decay * comp
 
-    def fit(self, df: pd.DataFrame, as_of: pd.Timestamp | None = None) -> "DixonColes":
+    def fit(
+        self,
+        df: pd.DataFrame,
+        as_of: pd.Timestamp | None = None,
+        groups: dict[str, str] | None = None,
+    ) -> "DixonColes":
         as_of = pd.Timestamp(as_of) if as_of is not None else df["date"].max()
         df = df[df["date"] <= as_of]
         w = self._weights(df, as_of)
@@ -100,32 +119,53 @@ class DixonColes:
         x = df["hg"].to_numpy(dtype=float)
         y = df["ag"].to_numpy(dtype=float)
         home = (~df["neutral"].to_numpy(dtype=bool)).astype(float)
-        kappa = self.kappa
+        kappa, kappa_g = self.kappa, self.kappa_group
+
+        # league groups (a single group == the plain model with an extra
+        # offset absorbed by mu, so it is skipped)
+        groups = groups or {}
+        group_names = sorted({groups.get(t, "OTHER") for t in self.teams}) if groups else []
+        G = len(group_names)
+        gidx = {g: k for k, g in enumerate(group_names)}
+        team_g = np.array([gidx[groups.get(t, "OTHER")] for t in self.teams], dtype=int) if G else np.zeros(n, int)
+
+        def unpack(theta):
+            u, v = theta[2 : 2 + n], theta[2 + n : 2 + 2 * n]
+            A, D = theta[2 + 2 * n : 2 + 2 * n + G], theta[2 + 2 * n + G :]
+            a = u + (A[team_g] if G else 0.0)
+            d = v + (D[team_g] if G else 0.0)
+            return u, v, A, D, a, d
 
         def nll(theta: np.ndarray) -> tuple[float, np.ndarray]:
             mu, gamma = theta[0], theta[1]
-            a, d = theta[2 : 2 + n], theta[2 + n :]
+            u, v, A, D, a, d = unpack(theta)
             log_lh = mu + gamma * home + a[hi] - d[ai]
             log_la = mu + a[ai] - d[hi]
             lh, la = np.exp(log_lh), np.exp(log_la)
             ll = np.sum(w * (x * log_lh - lh + y * log_la - la))
-            ll -= 0.5 * kappa * (a @ a + d @ d)
+            ll -= 0.5 * kappa * (u @ u + v @ v) + 0.5 * kappa_g * (A @ A + D @ D)
 
             rh, ra = w * (x - lh), w * (y - la)
             g = np.empty_like(theta)
             g[0] = rh.sum() + ra.sum()
             g[1] = (rh * home).sum()
-            ga = np.bincount(hi, rh, n) + np.bincount(ai, ra, n) - kappa * a
-            gd = -np.bincount(ai, rh, n) - np.bincount(hi, ra, n) - kappa * d
-            g[2 : 2 + n], g[2 + n :] = ga, gd
+            ga = np.bincount(hi, rh, n) + np.bincount(ai, ra, n)   # d ll / d a_i
+            gd = -np.bincount(ai, rh, n) - np.bincount(hi, ra, n)  # d ll / d d_i
+            g[2 : 2 + n] = ga - kappa * u
+            g[2 + n : 2 + 2 * n] = gd - kappa * v
+            if G:
+                g[2 + 2 * n : 2 + 2 * n + G] = np.bincount(team_g, ga, G) - kappa_g * A
+                g[2 + 2 * n + G :] = np.bincount(team_g, gd, G) - kappa_g * D
             return -ll, -g
 
-        theta0 = np.zeros(2 + 2 * n)
+        theta0 = np.zeros(2 + 2 * n + 2 * G)
         theta0[0] = np.log(max((x.mean() + y.mean()) / 2, 0.1))
-        res = minimize(nll, theta0, jac=True, method="L-BFGS-B", options={"maxiter": 2000})
+        res = minimize(nll, theta0, jac=True, method="L-BFGS-B", options={"maxiter": 5000})
         theta = res.x
         self.mu, self.home_adv = float(theta[0]), float(theta[1])
-        self.attack, self.defence = theta[2 : 2 + n], theta[2 + n :]
+        _, _, A, D, self.attack, self.defence = unpack(theta)
+        self.groups = {t: groups.get(t, "OTHER") for t in self.teams} if G else {}
+        self.group_strength = {g: (float(A[k]), float(D[k])) for g, k in gidx.items()}
 
         # stage 2: rho
         lh = np.exp(self.mu + self.home_adv * home + self.attack[hi] - self.defence[ai])
@@ -176,6 +216,8 @@ class DixonColes:
                 "matches": [self.n_matches.get(t, 0) for t in self.teams],
             }
         )
+        if self.groups:
+            df["league"] = [self.groups.get(t, "") for t in self.teams]
         df["overall"] = df["attack"] + df["defence"]
         return df.sort_values("overall", ascending=False).reset_index(drop=True)
 

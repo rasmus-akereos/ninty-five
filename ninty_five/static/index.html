@@ -38,6 +38,9 @@ th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--bor
 th:first-child, td:first-child { text-align: left; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
 tr.rec td { background: var(--good-bg); }
+#board tr[data-i] { cursor: pointer; }
+#board th:nth-child(-n+3), #board td:nth-child(-n+3) { text-align: left; }
+#board tr[data-i]:hover td { background: var(--bg); }
 .pos { color: var(--good); } .neg { color: var(--bad); }
 .scroll { overflow-x: auto; }
 .note { background: var(--warn-bg); padding: 8px 10px; border-radius: 6px; margin: 8px 0; font-size: 13px; }
@@ -55,6 +58,17 @@ details summary { cursor: pointer; color: var(--muted); }
   <p>Dixon-Coles match model vs. your bookmaker's odds. Enter the prices you see, get fair odds, edge and stake.</p>
 </header>
 <main>
+  <section>
+    <h2>Upcoming matches (Champions League + top leagues)</h2>
+    <div class="row" style="margin-top:0">
+      <div style="width:120px"><label>Next days</label><input id="days" type="number" value="7" min="1" max="30"></div>
+      <div style="width:150px"><label>Min edge for list (%)</label><input id="boardedge" type="number" value="8" step="1"></div>
+      <div style="align-self:end"><button id="loadboard">Fetch matches</button></div>
+    </div>
+    <p class="muted" id="board-info">Shows the minimum Danske Spil odds worth betting at, so you only check prices. Click a match to enter its odds.</p>
+    <div class="scroll"><table id="board"></table></div>
+  </section>
+
   <section>
     <h2>1. Match</h2>
     <div class="grid">
@@ -119,6 +133,8 @@ const pct = (x, d = 1) => x == null ? "–" : (100 * x).toFixed(d) + "%";
 const num = (x, d = 2) => x == null ? "–" : Number(x).toFixed(d);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let last = null;
+let board = [];
+let fixture = null; // the board row currently loaded into the form, if any
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -138,7 +154,8 @@ function buildOdds() {
 async function loadDatasets() {
   const ds = await api("/api/datasets");
   $("dataset").innerHTML = Object.entries(ds).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
-  $("dataset").onchange = loadTeams;
+  $("dataset").value = "INTL";
+  $("dataset").onchange = () => { fixture = null; loadTeams(); };
   await loadTeams();
 }
 
@@ -148,7 +165,7 @@ async function loadTeams() {
     const t = await api(`/api/teams?dataset=${$("dataset").value}`);
     $("teams").innerHTML = t.teams.map(x => `<option value="${esc(x)}">`).join("");
     $("model-info").textContent = `${t.teams.length} teams · results up to ${t.as_of}`;
-    $("neutral").checked = $("dataset").value === "INTL";
+    if (!fixture) $("neutral").checked = $("dataset").value === "INTL";
   } catch (e) { $("model-info").textContent = e.message; }
 }
 
@@ -204,13 +221,43 @@ function render(r) {
     r.top_scores.map(s => `<tr><td>${s.score}</td><td>${pct(s.p)}</td></tr>`).join("");
 }
 
+async function loadBoard() {
+  $("board-info").textContent = "Fetching fixtures and fitting the Europe model (first run downloads ~3 seasons and can take a few minutes)…";
+  let r;
+  try { r = await api(`/api/fixtures?days=${+$("days").value}&min_edge=${+$("boardedge").value / 100}`); }
+  catch (e) { $("board-info").textContent = e.message; return; }
+  board = r.fixtures;
+  const settled = r.auto_settled.length ? ` · auto-settled ${r.auto_settled.length} bet(s)` : "";
+  $("board-info").textContent = `${board.length} matches${settled}. Figures are minimum odds (model only, edge ≥ ${$("boardedge").value}%). Click a row to evaluate with real odds.`;
+  if (settled) loadBets();
+  const M = ["1", "X", "2", "Over 2.5", "Under 2.5", "BTTS Yes"];
+  $("board").innerHTML = board.length ? `<tr><th>Kick-off</th><th>Competition</th><th>Match</th>${M.map(m => `<th>${m}</th>`).join("")}</tr>` +
+    board.map((f, i) => {
+      const ko = new Date(f.kickoff).toLocaleString([], { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+      const thin = f.rated && Math.min(...f.data_matches) < 10 ? " ⚠" : "";
+      const cells = f.rated ? M.map(m => `<td>${num(f.min_odds[m])}</td>`).join("") : `<td colspan="${M.length}" class="muted">no rating</td>`;
+      return `<tr data-i="${i}"><td>${ko}</td><td>${esc(f.competition)}</td><td>${esc(f.home)} – ${esc(f.away)}${thin}</td>${cells}</tr>`;
+    }).join("") : `<tr><td class="muted">No scheduled matches in this window.</td></tr>`;
+  document.querySelectorAll("#board tr[data-i]").forEach(tr => tr.onclick = () => pickFixture(board[+tr.dataset.i]));
+}
+
+async function pickFixture(f) {
+  if ($("dataset").value !== "EUROPE") { $("dataset").value = "EUROPE"; await loadTeams(); }
+  $("home").value = f.home; $("away").value = f.away; $("neutral").checked = f.neutral;
+  fixture = f;
+  document.querySelectorAll("[data-market]").forEach(el => el.value = "");
+  $("odds").scrollIntoView({ behavior: "smooth" });
+  document.querySelector('[data-market="1"]').focus();
+}
+
 async function logBet(i) {
   const s = last.selections[i];
   const stake = prompt(`Stake for ${s.market} @ ${s.odds}`, s.stake);
   if (!stake) return;
   await api("/api/bets", { method: "POST", body: JSON.stringify({
     dataset: $("dataset").value, home: last.home, away: last.away, market: s.market, odds: s.odds,
-    stake: parseFloat(stake), p_model: s.p_model, p_blend: s.p_blend, ev: s.ev }) });
+    stake: parseFloat(stake), p_model: s.p_model, p_blend: s.p_blend, ev: s.ev,
+    ...(fixture && fixture.home === last.home && fixture.away === last.away ? { match_id: fixture.match_id, kickoff: fixture.kickoff } : {}) }) });
   loadBets();
 }
 
@@ -251,6 +298,8 @@ async function loadBets() {
 
 buildOdds();
 $("go").onclick = evaluate;
+$("loadboard").onclick = loadBoard;
+["home", "away"].forEach(id => $(id).addEventListener("input", () => { fixture = null; }));
 $("clear").onclick = () => document.querySelectorAll("[data-market]").forEach(el => el.value = "");
 loadDatasets();
 loadBets();

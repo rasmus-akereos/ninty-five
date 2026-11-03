@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import threading
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -10,30 +10,25 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import data as data_mod
-from .model import CLUB_PARAMS, INTL_PARAMS, DixonColes, markets
+from . import fixtures, service
+from .model import DixonColes, markets
 from .store import BetStore
 from .value import Settings, evaluate, overround
 
 STATIC = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="ninty-five")
-_models: dict[str, DixonColes] = {}
-_lock = threading.Lock()
 store = BetStore()
+log = logging.getLogger("ninty_five")
 
 
 def get_model(dataset: str, refresh: bool = False) -> DixonColes:
-    key = dataset.upper()
-    with _lock:
-        if refresh or key not in _models:
-            try:
-                df = data_mod.load_dataset(key, refresh=refresh)
-            except Exception as exc:  # network / unknown league
-                raise HTTPException(502, f"Could not load data for {key}: {exc}") from exc
-            params = INTL_PARAMS if key == "INTL" else CLUB_PARAMS
-            _models[key] = DixonColes(**params).fit(df)
-        return _models[key]
+    try:
+        return service.get_model(dataset, refresh=refresh)
+    except fixtures.ApiKeyMissing as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # network / unknown league
+        raise HTTPException(502, f"Could not load data for {dataset}: {exc}") from exc
 
 
 # ----------------------------------------------------------------- schemas
@@ -64,6 +59,8 @@ class BetIn(BaseModel):
     p_model: float | None = None
     p_blend: float | None = None
     ev: float | None = None
+    match_id: int | None = None
+    kickoff: str | None = None
 
 
 class SettleIn(BaseModel):
@@ -81,7 +78,25 @@ def index() -> FileResponse:
 
 @app.get("/api/datasets")
 def datasets() -> dict[str, str]:
-    return data_mod.available_datasets()
+    return service.datasets()
+
+
+@app.get("/api/fixtures")
+def fixture_board(days: int = 7, min_edge: float = 0.08) -> dict:
+    """Upcoming CL + top-league matches with model prices. Also settles any
+    open bets whose matches have finished."""
+    try:
+        rows = service.board(days=days, min_edge=min_edge)
+    except fixtures.ApiKeyMissing as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, f"Could not fetch fixtures: {exc}") from exc
+    settled: list[int] = []
+    try:
+        settled = store.auto_settle(service.results_frame())
+    except Exception as exc:  # settlement is best effort
+        log.warning("auto-settle failed: %s", exc)
+    return {"fixtures": rows, "auto_settled": settled}
 
 
 @app.get("/api/teams")
