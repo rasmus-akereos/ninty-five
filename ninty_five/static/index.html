@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ninty-five</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5f6b7a; --border: #dde2e8;
+  --accent: #1f6feb; --good: #1a7f37; --good-bg: #e6f4ea; --bad: #b42318; --warn-bg: #fff6e0;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1216; --panel: #171b21; --text: #e6e9ed; --muted: #9aa5b1; --border: #2a313a;
+          --accent: #4c8dff; --good: #4ac26b; --good-bg: #13261a; --bad: #ff6b5e; --warn-bg: #2a2410; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+header { padding: 16px; border-bottom: 1px solid var(--border); background: var(--panel); }
+header h1 { margin: 0; font-size: 18px; }
+header p { margin: 4px 0 0; color: var(--muted); }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+h2 { margin: 0 0 12px; font-size: 15px; }
+label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+input, select, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; width: 100%; }
+button { background: var(--accent); color: #fff; border: none; cursor: pointer; width: auto; padding: 8px 14px; }
+button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+button.small { padding: 4px 8px; font-size: 12px; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.odds-group { border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
+.odds-group h3 { margin: 0 0 8px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.odds-row { display: grid; grid-template-columns: repeat(var(--n), 1fr); gap: 6px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.check { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
+.check input { width: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+tr.rec td { background: var(--good-bg); }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+.scroll { overflow-x: auto; }
+.note { background: var(--warn-bg); padding: 8px 10px; border-radius: 6px; margin: 8px 0; font-size: 13px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.kpi { border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+.kpi b { display: block; font-size: 18px; }
+.kpi span { color: var(--muted); font-size: 12px; }
+.muted { color: var(--muted); }
+details summary { cursor: pointer; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>ninty-five</h1>
+  <p>Dixon-Coles match model vs. your bookmaker's odds. Enter the prices you see, get fair odds, edge and stake.</p>
+</header>
+<main>
+  <section>
+    <h2>1. Match</h2>
+    <div class="grid">
+      <div><label>Data set</label><select id="dataset"></select></div>
+      <div><label>Home / team 1</label><input id="home" list="teams" autocomplete="off"></div>
+      <div><label>Away / team 2</label><input id="away" list="teams" autocomplete="off"></div>
+      <div style="align-self:end"><label class="check"><input type="checkbox" id="neutral"> Neutral venue</label></div>
+    </div>
+    <datalist id="teams"></datalist>
+    <p class="muted" id="model-info"></p>
+  </section>
+
+  <section>
+    <h2>2. Odds (decimal, as shown on Danske Spil)</h2>
+    <div class="grid" id="odds" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))"></div>
+    <details style="margin-top:12px">
+      <summary>Settings</summary>
+      <div class="grid" style="margin-top:8px">
+        <div><label>Bankroll (kr)</label><input id="bankroll" type="number" value="1000"></div>
+        <div><label>Model weight α (0 = market, 1 = model)</label><input id="alpha" type="number" step="0.05" value="0.5"></div>
+        <div><label>Kelly fraction</label><input id="kelly" type="number" step="0.05" value="0.25"></div>
+        <div><label>Max stake (% bankroll)</label><input id="maxstake" type="number" step="0.5" value="3"></div>
+        <div><label>Min edge (EV %)</label><input id="minedge" type="number" step="0.5" value="3"></div>
+      </div>
+    </details>
+    <div class="row">
+      <button id="go">Evaluate</button>
+      <button class="secondary" id="clear">Clear odds</button>
+    </div>
+  </section>
+
+  <section id="result" hidden>
+    <h2>3. Result</h2>
+    <div id="summary"></div>
+    <div class="scroll"><table id="sel"></table></div>
+    <details style="margin-top:12px"><summary>All model probabilities &amp; likely scores</summary>
+      <div class="grid" style="margin-top:8px">
+        <div class="scroll"><table id="probs"></table></div>
+        <div class="scroll"><table id="scores"></table></div>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <h2>Bet log</h2>
+    <div class="kpis" id="kpis"></div>
+    <div class="scroll"><table id="bets"></table></div>
+  </section>
+</main>
+
+<script>
+const GROUPS = [
+  ["1X2", ["1", "X", "2"]],
+  ["Double chance", ["1X", "12", "X2"]],
+  ["Over/Under 1.5", ["Over 1.5", "Under 1.5"]],
+  ["Over/Under 2.5", ["Over 2.5", "Under 2.5"]],
+  ["Over/Under 3.5", ["Over 3.5", "Under 3.5"]],
+  ["Both teams score", ["BTTS Yes", "BTTS No"]],
+];
+const $ = id => document.getElementById(id);
+const pct = (x, d = 1) => x == null ? "–" : (100 * x).toFixed(d) + "%";
+const num = (x, d = 2) => x == null ? "–" : Number(x).toFixed(d);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let last = null;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.detail || r.statusText);
+  return body;
+}
+
+function buildOdds() {
+  $("odds").innerHTML = GROUPS.map(([title, keys]) => `
+    <div class="odds-group"><h3>${title}</h3>
+      <div class="odds-row" style="--n:${keys.length}">
+        ${keys.map(k => `<div><label>${k}</label><input data-market="${k}" inputmode="decimal"></div>`).join("")}
+      </div></div>`).join("");
+}
+
+async function loadDatasets() {
+  const ds = await api("/api/datasets");
+  $("dataset").innerHTML = Object.entries(ds).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+  $("dataset").onchange = loadTeams;
+  await loadTeams();
+}
+
+async function loadTeams() {
+  $("model-info").textContent = "Fitting model…";
+  try {
+    const t = await api(`/api/teams?dataset=${$("dataset").value}`);
+    $("teams").innerHTML = t.teams.map(x => `<option value="${esc(x)}">`).join("");
+    $("model-info").textContent = `${t.teams.length} teams · results up to ${t.as_of}`;
+    $("neutral").checked = $("dataset").value === "INTL";
+  } catch (e) { $("model-info").textContent = e.message; }
+}
+
+function readOdds() {
+  const odds = {};
+  document.querySelectorAll("[data-market]").forEach(el => {
+    const v = parseFloat(el.value.replace(",", "."));
+    if (v > 1) odds[el.dataset.market] = v;
+  });
+  return odds;
+}
+
+function settings() {
+  return {
+    bankroll: +$("bankroll").value, alpha: +$("alpha").value, kelly_fraction: +$("kelly").value,
+    max_stake_pct: +$("maxstake").value / 100, min_edge: +$("minedge").value / 100,
+  };
+}
+
+async function evaluate() {
+  try {
+    last = await api("/api/evaluate", { method: "POST", body: JSON.stringify({
+      dataset: $("dataset").value, home: $("home").value.trim(), away: $("away").value.trim(),
+      neutral: $("neutral").checked, odds: readOdds(), settings: settings() }) });
+  } catch (e) { alert(e.message); return; }
+  render(last);
+}
+
+function render(r) {
+  $("result").hidden = false;
+  const notes = [];
+  const [nh, na] = r.data_matches;
+  if (Math.min(nh, na) < 15) notes.push(`Thin data: ${Math.round(Math.min(nh, na))} recent matches for one side. Treat with caution.`);
+  for (const [k, v] of Object.entries(r.margins)) notes.push(`Bookmaker margin ${k}: ${pct(v)}. This is what the model has to beat.`);
+  if (r.selections.some(s => s.p_market == null)) notes.push("Rows without a market probability come from an incomplete market (enter every outcome to strip the margin). They use the model only and are less reliable.");
+  $("summary").innerHTML = `
+    <p><b>${esc(r.home)}</b> ${num(r.xg[0])} – ${num(r.xg[1])} <b>${esc(r.away)}</b> <span class="muted">(expected goals)</span></p>
+    <p>1: ${pct(r.probabilities["1"])} · X: ${pct(r.probabilities["X"])} · 2: ${pct(r.probabilities["2"])}</p>
+    ${notes.map(n => `<div class="note">${esc(n)}</div>`).join("")}`;
+
+  if (!r.selections.length) { $("sel").innerHTML = "<tr><td>No odds entered: model prices only.</td></tr>"; }
+  else $("sel").innerHTML = `<tr><th>Selection</th><th>Odds</th><th>Model</th><th>Market (no margin)</th><th>Blend</th><th>Fair odds</th><th>EV</th><th>Stake</th><th></th></tr>` +
+    r.selections.map((s, i) => `<tr class="${s.recommended ? "rec" : ""}">
+      <td>${esc(s.market)}</td><td>${num(s.odds)}</td><td>${pct(s.p_model)}</td><td>${pct(s.p_market)}</td>
+      <td>${pct(s.p_blend)}</td><td>${num(s.fair_odds)}</td>
+      <td class="${s.ev >= 0 ? "pos" : "neg"}">${pct(s.ev)}</td>
+      <td>${s.recommended ? num(s.stake, 0) + " kr" : "–"}</td>
+      <td>${s.recommended ? `<button class="small" onclick="logBet(${i})">Log bet</button>` : ""}</td></tr>`).join("");
+
+  $("probs").innerHTML = `<tr><th>Market</th><th>Prob.</th><th>Fair odds</th></tr>` +
+    Object.entries(r.probabilities).map(([k, v]) => `<tr><td>${k}</td><td>${pct(v)}</td><td>${num(r.fair_odds[k])}</td></tr>`).join("");
+  $("scores").innerHTML = `<tr><th>Score</th><th>Prob.</th></tr>` +
+    r.top_scores.map(s => `<tr><td>${s.score}</td><td>${pct(s.p)}</td></tr>`).join("");
+}
+
+async function logBet(i) {
+  const s = last.selections[i];
+  const stake = prompt(`Stake for ${s.market} @ ${s.odds}`, s.stake);
+  if (!stake) return;
+  await api("/api/bets", { method: "POST", body: JSON.stringify({
+    dataset: $("dataset").value, home: last.home, away: last.away, market: s.market, odds: s.odds,
+    stake: parseFloat(stake), p_model: s.p_model, p_blend: s.p_blend, ev: s.ev }) });
+  loadBets();
+}
+
+async function settle(id) {
+  const score = prompt("Final score (e.g. 2-1), or 'void'");
+  if (!score) return;
+  const closing = prompt("Closing odds for this selection (optional, used for CLV)");
+  const body = { closing_odds: closing ? parseFloat(closing.replace(",", ".")) : null };
+  if (score.trim().toLowerCase() === "void") body.void = true;
+  else { const [h, a] = score.split(/[-:]/).map(Number); body.home_goals = h; body.away_goals = a; }
+  try { await api(`/api/bets/${id}/settle`, { method: "POST", body: JSON.stringify(body) }); } catch (e) { alert(e.message); }
+  loadBets();
+}
+
+async function del(id) {
+  if (!confirm("Delete this bet?")) return;
+  await api(`/api/bets/${id}`, { method: "DELETE" });
+  loadBets();
+}
+
+async function loadBets() {
+  const { bets, summary: s } = await api("/api/bets");
+  $("kpis").innerHTML = [
+    ["Bets", `${s.n_bets} (${s.n_open} open)`], ["Staked", num(s.staked, 0) + " kr"],
+    ["P/L", `<span class="${s.pnl >= 0 ? "pos" : "neg"}">${num(s.pnl, 0)} kr</span>`],
+    ["ROI", pct(s.roi)], ["Expected P/L", num(s.expected_pnl, 0) + " kr"],
+    ["Avg CLV", s.avg_clv == null ? "–" : `${pct(s.avg_clv)} (n=${s.n_clv})`],
+  ].map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join("");
+  $("bets").innerHTML = bets.length ? `<tr><th>Match</th><th>Selection</th><th>Odds</th><th>Stake</th><th>EV</th><th>Close</th><th>Result</th><th>P/L</th><th></th></tr>` +
+    bets.map(b => `<tr><td>${esc(b.home)} – ${esc(b.away)}</td><td>${esc(b.market)}</td><td>${num(b.odds)}</td>
+      <td>${num(b.stake, 0)}</td><td>${pct(b.ev)}</td><td>${num(b.closing_odds)}</td>
+      <td>${b.status}${b.home_goals != null ? ` (${b.home_goals}-${b.away_goals})` : ""}</td>
+      <td class="${(b.pnl || 0) >= 0 ? "pos" : "neg"}">${num(b.pnl, 0)}</td>
+      <td><button class="small secondary" onclick="settle(${b.id})">Settle</button>
+          <button class="small secondary" onclick="del(${b.id})">✕</button></td></tr>`).join("")
+    : `<tr><td class="muted">No bets logged yet.</td></tr>`;
+}
+
+buildOdds();
+$("go").onclick = evaluate;
+$("clear").onclick = () => document.querySelectorAll("[data-market]").forEach(el => el.value = "");
+loadDatasets();
+loadBets();
+</script>
+</body>
+</html>

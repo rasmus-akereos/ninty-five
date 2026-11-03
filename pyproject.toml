@@ -1,0 +1,28 @@
+[project]
+name = "ninty-five"
+version = "0.1.0"
+description = "Football match outcome model and value-bet evaluator for manually entered bookmaker odds"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "scipy>=1.11",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+ninty-five = "ninty_five.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["ninty_five*"]
+
+[tool.setuptools.package-data]
+ninty_five = ["static/*"]
