@@ -1,10 +1,10 @@
 """Lower-league fixtures and results from football-data.co.uk (no key).
 
-Fixtures come from two files the site publishes roughly twice a week, just
-before each round, holding only the next few days' matches:
-
-* fixtures.csv            main-league format: Div, Date, Time, HomeTeam, AwayTeam, ...
-* new_league_fixtures.csv extra-league format: Country, League, Date, Time, Home, Away, ...
+Fixtures come from fixtures.csv (Div, Date, Time, HomeTeam, AwayTeam, ...),
+which the site publishes roughly twice a week, just before each round, with
+only the next few days' matches. The Danish Superliga's fixtures come from
+ESPN instead (cup_fixtures.py): the site's extra-league fixtures file lists
+them too late to bet on. Its results still come from here.
 
 Results come from the same season files the country models train on. The
 fixtures files mostly use the same team names, but not always ("Oxford Utd"
@@ -24,7 +24,6 @@ from .data import _fetch
 from .import_odds import _tokens, same_team
 
 FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"
-NEW_FIXTURES_URL = "https://www.football-data.co.uk/new_league_fixtures.csv"
 
 # Division code -> board label for the leagues this module adds to the board.
 NEW_DIVISIONS = {
@@ -36,7 +35,6 @@ NEW_DIVISIONS = {
     "F2": "France 2",
     "DNK": "Denmark 1",
 }
-EXTRA_LEAGUES = {("Denmark", "Superliga"): "DNK"}  # (Country, League) in the extra format
 
 # (division, fixtures-file name) -> results-file name, for names the matcher
 # can't resolve. Extend when the board warns about an unknown team name.
@@ -84,15 +82,6 @@ def parse_main(raw: bytes) -> pd.DataFrame:
     df = _read(raw)
     df = df[df["Div"].str.strip().isin(NEW_DIVISIONS)].reset_index(drop=True)
     return _frame(df["Div"].str.strip(), df, "HomeTeam", "AwayTeam")
-
-
-def parse_extra(raw: bytes) -> pd.DataFrame:
-    """The Danish Superliga rows of new_league_fixtures.csv."""
-    df = _read(raw)
-    codes = [EXTRA_LEAGUES.get((str(c).strip(), str(l).strip())) for c, l in zip(df["Country"], df["League"])]
-    df = df.assign(_div=codes)
-    df = df[df["_div"].notna()].reset_index(drop=True)
-    return _frame(df["_div"], df, "Home", "Away")
 
 
 RESERVE = {"ii", "b", "2"}  # reserve sides: "Real Sociedad II", "Celta B"
@@ -162,9 +151,7 @@ def match_key(division: str, kickoff_utc: pd.Timestamp, home: str, away: str) ->
 
 
 def _all_fixtures() -> pd.DataFrame:
-    main = _memo("fixtures", lambda: parse_main(_fetch(FIXTURES_URL)))
-    extra = _memo("new_fixtures", lambda: parse_extra(_fetch(NEW_FIXTURES_URL)))
-    return pd.concat([main, extra], ignore_index=True)
+    return _memo("fixtures", lambda: parse_main(_fetch(FIXTURES_URL)))
 
 
 def upcoming(days: int, now: pd.Timestamp | None = None) -> pd.DataFrame:

@@ -10,7 +10,6 @@ os.environ.setdefault("NINTY_FIVE_SCHEDULER", "0")  # no daily-fetch thread in t
 
 EMPTY = {
     league_fixtures.FIXTURES_URL: b"Div,Date,Time,HomeTeam,AwayTeam\n",
-    league_fixtures.NEW_FIXTURES_URL: b"Country,League,Date,Time,Home,Away\n",
 }
 
 

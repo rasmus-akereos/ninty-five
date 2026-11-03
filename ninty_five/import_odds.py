@@ -43,6 +43,8 @@ DANISH_COUNTRIES = {
     "sydafrika": "south africa", "saudi arabien": "saudi arabia", "iran": "iran", "irak": "iraq", "qatar": "qatar", "indien": "india",
     "new zealand": "new zealand", "jamaica": "jamaica", "haiti": "haiti",
 }
+# Danish club names on Danske Spil -> the model's (football-data.co.uk) names
+DANISH_CLUBS = {"koebenhavn": "copenhagen", "agf": "aarhus"}
 STOPWORDS = {"fc", "afc", "cf", "sk", "kv", "sc", "ac", "as", "fk", "club", "de", "the", "cd", "sv", "vfb", "vfl", "ss"}
 
 
@@ -56,7 +58,8 @@ def _fold(s: str) -> str:
 def _tokens(name: str) -> list[str]:
     folded = _fold(name)
     folded = DANISH_COUNTRIES.get(folded, folded)
-    return [t for t in folded.split() if t not in STOPWORDS] or folded.split()
+    words = [DANISH_CLUBS.get(t, t) for t in folded.split()]
+    return [t for t in words if t not in STOPWORDS] or words
 
 
 def _word_match(ds: str, board: str) -> bool:

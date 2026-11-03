@@ -1,4 +1,4 @@
-"""Domestic cup fixtures from ESPN, priced by the country models.
+"""Domestic cups and the Danish Superliga from ESPN, priced by the country models.
 
 Only matches between two clubs the model knows are listed: a team counts as
 known when it appears in ESPN's own league scoreboards for that country (the
@@ -25,8 +25,13 @@ CUPS = {
     "ita.coppa_italia": ("Coppa Italia", "ITA"),
     "fra.coupe_de_france": ("Coupe de France", "FRA"),
 }
+# Leagues whose fixtures come from ESPN rather than football-data.co.uk
+# (its Danish fixtures arrive too late to bet on).
+ESPN_LEAGUES = {"den.1": ("Denmark 1", "DEN")}
+ESPN_SLUGS = {**CUPS, **ESPN_LEAGUES}
 # The ESPN leagues each country model covers (its known clubs).
 LEAGUE_SLUGS = {
+    "DEN": ["den.1"],
     "ENG": ["eng.1", "eng.2", "eng.3", "eng.4"],
     "GER": ["ger.1", "ger.2"],
     "ESP": ["esp.1", "esp.2"],
@@ -50,6 +55,8 @@ ALIASES = {
     ("FRA", "Paris Saint-Germain"): "Paris SG",
     ("FRA", "Saint-Étienne"): "St Etienne",
     ("FRA", "Stade Rennais"): "Rennes",
+    ("DEN", "AGF"): "Aarhus",
+    ("DEN", "F.C. København"): "FC Copenhagen",
 }
 
 
@@ -87,11 +94,11 @@ def upcoming(days: int = 7, now: pd.Timestamp | None = None) -> tuple[pd.DataFra
     """Cup matches between known clubs in the window, with model names, plus
     warnings for covered league clubs the model can't be matched to."""
     now = now or pd.Timestamp.now(tz="UTC")
-    fx = intl_fixtures.upcoming(days, now, slugs=list(CUPS), club=True)
+    fx = intl_fixtures.upcoming(days, now, slugs=list(ESPN_SLUGS), club=True)
     rows, warnings = [], []
     known: dict[str, tuple[list[str], set[str]]] = {}
     for f in fx.itertuples():
-        label, country = CUPS[f.slug]
+        label, country = ESPN_SLUGS[f.slug]
         if country not in known:
             known[country] = (model_teams(country), league_clubs(country, now))
         teams, clubs = known[country]
@@ -111,5 +118,5 @@ REAL_UPCOMING = upcoming  # tests replace `upcoming` with an offline stub
 
 
 def results(since: pd.Timestamp, now: pd.Timestamp | None = None) -> pd.DataFrame:
-    """90-minute cup results (event_id, hg, ag, status) from ESPN."""
-    return intl_fixtures.results(since, now, slugs=list(CUPS))
+    """90-minute cup and Superliga results (event_id, hg, ag, status) from ESPN."""
+    return intl_fixtures.results(since, now, slugs=list(ESPN_SLUGS))

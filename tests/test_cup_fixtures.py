@@ -82,3 +82,20 @@ def test_aliases_cover_the_names_the_matcher_misses():
     assert a[("GER", "Borussia Mönchengladbach")] == "M'gladbach"
     assert a[("ESP", "Atlético Madrid")] == "Ath Madrid" and a[("ESP", "RC Celta Fortuna")] == "Celta B"
     assert a[("FRA", "Paris Saint-Germain")] == "Paris SG"
+
+
+def test_superliga_comes_from_espn(monkeypatch):
+    def fake_get(slug, month):
+        if slug == "den.1":
+            return board("Danish Superliga", [ev("50", "2026-11-08T11:00Z", "Brøndby IF", "F.C. København"),
+                                              ev("51", "2026-11-08T13:00Z", "AC Horsens", "AGF")])
+        return board("x", [])
+
+    monkeypatch.setattr(intl_fixtures, "_get", fake_get)
+    monkeypatch.setattr(cup_fixtures, "model_teams",
+                        lambda country: ["Brondby", "FC Copenhagen", "Horsens", "Aarhus"] if country == "DEN" else [])
+    df, warnings = cup_fixtures.REAL_UPCOMING(7, now=NOW)
+    assert {(r.home, r.away) for r in df.itertuples()} == {("Brondby", "FC Copenhagen"), ("Horsens", "Aarhus")}
+    assert set(df["competition"]) == {"Denmark 1"} and set(df["dataset"]) == {"DEN"} and warnings == []
+    assert "den.1" in cup_fixtures.ESPN_SLUGS
+

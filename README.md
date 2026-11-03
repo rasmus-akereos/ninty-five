@@ -55,9 +55,9 @@ fails, the board still shows the club matches with a warning.
 The board also lists **League One, League Two, 2. Bundesliga, Segunda
 División, Serie B, Ligue 2 and the Danish Superliga** (buttons *England 3*,
 *England 4*, *Germany 2*, *Spain 2*, *Italy 2*, *France 2*, *Denmark 1*). They
-come from football-data.co.uk (no key), which publishes fixtures about twice
-a week, just before each round: these matches appear **2–3 days before
-kick-off**, not a week ahead, and their bets settle a day or two after the
+come from football-data.co.uk (no key; the Superliga's fixtures come from ESPN,
+see Cups), which publishes fixtures about twice a week, just before each
+round: these matches appear **2–3 days before kick-off**, not a week ahead, and their bets settle a day or two after the
 match, when the site adds the result.
 
 Each country has its own model (`ENG`, `GER`, `ESP`, `ITA`, `FRA`, `DEN`),
@@ -82,7 +82,9 @@ or lower-division side is skipped. A finals venue marked neutral is priced
 without home advantage. Bets settle on the **90-minute score** (extra time and
 penalties don't count). If the board warns that a league club has no model
 team, add its ESPN name to `ALIASES` in `ninty_five/cup_fixtures.py`. The
-Danish cup isn't covered: no free source carries it.
+Danish cup isn't covered: no free source carries it. The **Danish Superliga's** fixtures and results
+also come from ESPN, a week ahead (football-data.co.uk lists Danish fixtures
+too late); its model still trains on football-data.co.uk results.
 
 ### Daily fetch
 

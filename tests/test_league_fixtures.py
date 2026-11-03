@@ -7,7 +7,6 @@ from ninty_five import league_fixtures
 
 DATA = Path(__file__).parent / "data"
 SAMPLE_MAIN = (DATA / "fdcu_fixtures.csv").read_bytes()
-SAMPLE_EXTRA = (DATA / "fdcu_new_league_fixtures.csv").read_bytes()
 REAL_DIVISION_TEAMS = league_fixtures._division_teams  # conftest replaces it per test
 
 
@@ -36,13 +35,6 @@ def test_parse_main_summer_time():
     assert r.kickoff == pd.Timestamp("2026-08-15 14:00", tz="UTC")  # 15:00 BST
 
 
-def test_parse_extra_only_danish_superliga():
-    df = league_fixtures.parse_extra(SAMPLE_EXTRA)
-    assert list(df["division"]) == ["DNK"]
-    r = df.iloc[0]
-    assert (r.home, r.away) == ("Brondby", "FC Copenhagen") and r.kickoff == uk("2026-11-09 18:00")
-
-
 def test_match_key_uses_uk_date():
     # 23:30 UTC on 1 Aug is 00:30 on 2 Aug in the UK
     key = league_fixtures.match_key("E2", pd.Timestamp("2026-08-01 23:30", tz="UTC"), "Wigan", "Bolton")
@@ -50,18 +42,17 @@ def test_match_key_uses_uk_date():
 
 
 def test_upcoming_window_and_labels(monkeypatch):
-    files = {league_fixtures.FIXTURES_URL: SAMPLE_MAIN, league_fixtures.NEW_FIXTURES_URL: SAMPLE_EXTRA}
-    monkeypatch.setattr(league_fixtures, "_fetch", lambda url: files[url])
+    fetched = []
+    monkeypatch.setattr(league_fixtures, "_fetch", lambda url: fetched.append(url) or SAMPLE_MAIN)
     league_fixtures._cache.clear()
     df = league_fixtures.upcoming(7, now=pd.Timestamp("2026-11-03 12:00", tz="UTC"))
     assert "Hertha" not in set(df["home"])  # in the past
-    dk = df[df.division == "DNK"].iloc[0]
-    assert dk.competition == "Denmark 1" and dk.dataset == "DEN"
-    assert dk.key == "fdcu:DNK:2026-11-09:Brondby:FC Copenhagen"
+    assert fetched == [league_fixtures.FIXTURES_URL]  # Danish fixtures come from ESPN
+    assert "DNK" not in set(df["division"])
     e3 = df[df.division == "E3"].iloc[0]
     assert e3.competition == "England 4" and e3.dataset == "ENG"
     later = league_fixtures.upcoming(1, now=pd.Timestamp("2026-11-03 12:00", tz="UTC"))
-    assert "DNK" not in set(later["division"])  # beyond the window
+    assert "Oxford Utd" not in set(later["home"])  # 4 Nov is beyond a 1-day window
 
 
 def test_match_result_moved_match():
@@ -118,8 +109,7 @@ def test_resolve_name_alias_table(monkeypatch):
 
 def test_upcoming_resolves_names_and_flags_unknown(monkeypatch):
     main = b"Div,Date,Time,HomeTeam,AwayTeam\nE2,04/11/2026,19:45,Oxford Utd,Reading\nE2,04/11/2026,19:45,Newcomers FC,Wigan\n"
-    monkeypatch.setattr(league_fixtures, "_fetch", lambda url: main if url == league_fixtures.FIXTURES_URL
-                        else b"Country,League,Date,Time,Home,Away\n")
+    monkeypatch.setattr(league_fixtures, "_fetch", lambda url: main)
     monkeypatch.setattr(league_fixtures, "_division_teams", lambda div: ENG3)
     df = league_fixtures.upcoming(7, now=pd.Timestamp("2026-11-03 12:00", tz="UTC"))
     ox = df[df.away == "Reading"].iloc[0]
@@ -150,7 +140,6 @@ def test_division_teams_unavailable_fails_the_source(monkeypatch):
 
     monkeypatch.setattr(league_fixtures, "results", down)
     monkeypatch.setattr(league_fixtures, "_division_teams", REAL_DIVISION_TEAMS)
-    monkeypatch.setattr(league_fixtures, "_fetch", lambda url: SAMPLE_MAIN if url == league_fixtures.FIXTURES_URL
-                        else SAMPLE_EXTRA)
+    monkeypatch.setattr(league_fixtures, "_fetch", lambda url: SAMPLE_MAIN)
     with pytest.raises(OSError):
         league_fixtures.upcoming(7, now=pd.Timestamp("2026-11-03 00:00", tz="UTC"))

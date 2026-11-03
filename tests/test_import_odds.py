@@ -70,3 +70,10 @@ def test_same_teams_twice_picks_the_next_match():
     board = [{"key": "espn:2", "home": "New Zealand", "away": "India", "kickoff": "2026-11-15T07:00:00+00:00"},
              {"key": "espn:1", "home": "New Zealand", "away": "India", "kickoff": "2026-11-12T07:00:00+00:00"}]
     assert import_odds.find_match("New Zealand", "Indien", board)["key"] == "espn:1"
+
+
+def test_danish_club_names_match_the_board():
+    from ninty_five.import_odds import same_team
+    assert same_team("FC København", "FC Copenhagen")
+    assert same_team("AGF", "Aarhus")
+    assert same_team("Brøndby", "Brondby") and same_team("Sønderjyske", "Sonderjyske")

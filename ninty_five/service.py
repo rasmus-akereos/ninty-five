@@ -269,7 +269,7 @@ def update_results(history, bets, now: pd.Timestamp) -> list[int]:
     if intl:
         try:
             since = min(pd.Timestamp(p["kickoff"]) for p in intl)
-            slugs = intl_fixtures.SLUGS + list(cup_fixtures.CUPS)  # national teams and cups
+            slugs = intl_fixtures.SLUGS + list(cup_fixtures.ESPN_SLUGS)  # national teams, cups, Superliga
             res = {r.event_id: r for r in intl_fixtures.results(since, now, slugs=slugs).itertuples()}
             for p in intl:
                 r = res.get(p["key"][5:])
