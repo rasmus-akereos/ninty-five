@@ -5,113 +5,164 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ninty-five</title>
 <style>
+/* Sportsbook dark: deep navy, lighter navy cards, bright green for value. */
 :root {
-  --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5f6b7a; --border: #dde2e8;
-  --accent: #1f6feb; --accent-bg: #eaf1fd; --good: #1a7f37; --good-bg: #e6f4ea; --bad: #b42318; --warn-bg: #fff6e0;
+  --bg: #0b1322; --panel: #121c30; --panel-2: #18243c; --raised: #1f2c48; --border: #23324f;
+  --text: #e8edf6; --muted: #8b9ab5; --faint: #5f6f8c;
+  --accent: #5ee0a0; --accent-ink: #0b1322; --accent-bg: #133a2b;
+  --good: #5ee0a0; --good-bg: #134a33; --bad: #ff7a66; --warn: #ffb347; --warn-bg: #3a2c12;
+  --win: #2ea05a; --draw: #a3abb8; --loss: #e0533d;
+  --shadow: 0 1px 2px #0006;
+  color-scheme: dark;
 }
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #0f1216; --panel: #171b21; --text: #e6e9ed; --muted: #9aa5b1; --border: #2a313a;
-          --accent: #4c8dff; --accent-bg: #16233a; --good: #4ac26b; --good-bg: #13261a; --bad: #ff6b5e; --warn-bg: #2a2410; }
+:root[data-theme="light"] {
+  --bg: #f3f5f8; --panel: #ffffff; --panel-2: #f7f8fb; --raised: #eef1f6; --border: #dfe4ec;
+  --text: #1d2433; --muted: #5d6779; --faint: #8a93a5;
+  --accent: #14915a; --accent-ink: #ffffff; --accent-bg: #e3f6e9;
+  --good: #14915a; --good-bg: #e3f6e9; --bad: #c8412b; --warn: #b26a00; --warn-bg: #fff4dc;
+  --shadow: 0 1px 2px #0001;
+  color-scheme: light;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
-header { padding: 16px; border-bottom: 1px solid var(--border); background: var(--panel); }
-header h1 { margin: 0; font-size: 18px; }
-header p { margin: 4px 0 0; color: var(--muted); }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--accent); }
+
+/* top bar */
+.topbar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+.topbar-inner { max-width: 1100px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
+.logo { font-weight: 800; font-size: 18px; letter-spacing: .01em; color: var(--accent); margin-right: auto; }
+.logo span { color: var(--text); font-weight: 600; font-size: 12px; margin-left: 8px; opacity: .6; }
+.icon-btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
+.icon-btn:hover { border-color: var(--accent); }
+.icon-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.chips-bar { max-width: 1100px; margin: 0 auto; padding: 0 16px 10px; }
+.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.chip { flex: none; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.chip .n { opacity: .7; margin-left: 5px; font-size: 11px; }
+
 main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
-section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; min-width: 0; }
-h2 { margin: 0 0 12px; font-size: 15px; }
+section, .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; min-width: 0; box-shadow: var(--shadow); }
+h2 { margin: 0 0 12px; font-size: 16px; }
+h3.sub { margin: 4px 0 8px; font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
 label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-input, select, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; width: 100%; }
-button { background: var(--accent); color: #fff; border: none; cursor: pointer; width: auto; padding: 8px 14px; }
-button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); }
-button.small { padding: 4px 8px; font-size: 12px; }
+input, select, button { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; width: 100%; }
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+button { background: var(--accent); color: var(--accent-ink); border: none; cursor: pointer; width: auto; padding: 8px 14px; font-weight: 600; }
+button.secondary { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 500; }
+button.small { padding: 4px 10px; font-size: 12px; border-radius: 999px; }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 .check { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
 .check input { width: auto; }
+.muted { color: var(--muted); }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+.scroll { overflow-x: auto; }
+.note { background: var(--warn-bg); color: var(--text); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); padding: 8px 12px; border-radius: 10px; margin: 8px 0; font-size: 13px; }
+details summary { cursor: pointer; color: var(--muted); }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 th:first-child, td:first-child { text-align: left; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
 tr.rec td { background: var(--good-bg); }
-.pos { color: var(--good); } .neg { color: var(--bad); }
-.scroll { overflow-x: auto; }
-.note { background: var(--warn-bg); padding: 8px 10px; border-radius: 6px; margin: 8px 0; font-size: 13px; }
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
-.kpi { border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
-.kpi b { display: block; font-size: 18px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.kpi { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.kpi b { display: block; font-size: 18px; margin-top: 2px; }
 .kpi span { color: var(--muted); font-size: 12px; }
-.muted { color: var(--muted); }
-details summary { cursor: pointer; color: var(--muted); }
-a.bookmarklet { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; cursor: grab; }
-h3.sub { margin: 4px 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
 
-/* board */
-.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 8px; }
-.chip { background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 13px; }
-.chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-.chip .n { opacity: .65; margin-left: 4px; font-size: 11px; }
-#board th:nth-child(-n+3), #board td:nth-child(-n+3) { text-align: left; }
-#board tr.match, #board tr.add { cursor: pointer; }
-#board tr.match:hover > td, #board tr.add:hover > td { background: var(--bg); }
-#board tr.open > td { background: var(--accent-bg); font-weight: 600; }
-#board tr.add td { color: var(--accent); }
-.caret { display: inline-block; width: 1em; color: var(--muted); }
-tr.fold > td { text-align: left; white-space: normal; background: var(--accent-bg); border-left: 3px solid var(--accent); padding: 12px; }
+/* summary bar */
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.summary .kpi { background: var(--panel); box-shadow: var(--shadow); }
 
-/* fold-down contents */
+/* settings panel */
+#settings[hidden] { display: none; }
+a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); text-decoration: none; font-weight: 700; cursor: grab; }
+
+/* match list */
+.board-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.board-head h2 { margin: 0; }
+#board-info { font-size: 12px; }
+.day { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 16px 2px 8px; }
+.match { background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 8px; overflow: hidden; transition: border-color .15s; }
+.match:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.match.open { border-color: var(--accent); }
+.mrow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; cursor: pointer; }
+.time { flex: none; width: 54px; text-align: center; background: var(--raised); border-radius: 10px; padding: 6px 4px; font-variant-numeric: tabular-nums; }
+.time b { display: block; font-size: 15px; }
+.time span { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.teams { flex: 1; min-width: 0; }
+.team { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.team .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { font-size: 11px; color: var(--faint); margin-top: 2px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.badge { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--warn-bg); color: var(--warn); }
+.dots { display: inline-flex; gap: 3px; flex: none; }
+.dots i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; cursor: default; }
+.dots i.W { background: var(--win); } .dots i.D { background: var(--draw); } .dots i.L { background: var(--loss); }
+.prices { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.pill { min-width: 54px; text-align: center; background: var(--raised); border-radius: 10px; padding: 4px 8px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.pill small { display: block; font-size: 10px; color: var(--muted); font-weight: 500; }
+.unrated { color: var(--faint); font-size: 12px; }
+.add .mrow { color: var(--accent); font-weight: 600; justify-content: center; }
+.empty { color: var(--muted); text-align: center; padding: 24px; }
+@media (max-width: 720px) {
+  .mrow { flex-wrap: wrap; }
+  .prices { width: 100%; justify-content: flex-start; }
+  .pill { min-width: 48px; }
+}
+
+/* fold-down */
+.fold { border-top: 1px solid var(--border); padding: 12px; background: var(--panel); }
 .fold-teams { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 12px; }
-.groups { display: flex; flex-wrap: wrap; gap: 8px; }
-.odds-group { border: 1px solid var(--border); border-radius: 6px; padding: 8px; background: var(--panel); }
-.odds-group h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
-.odds-row { display: flex; gap: 6px; }
-.cell { width: 74px; }
-.cell label { margin-bottom: 2px; }
-.cell input { padding: 5px 6px; }
-.cell input.hit { border-color: var(--good); background: var(--good-bg); }
-.cell small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
-.more { margin-top: 8px; }
+/* the three market groups share the full width equally, contents centred */
+.groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.odds-group { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; text-align: center; }
+.odds-group h3 { margin: 0 0 6px; font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.odds-row { display: flex; gap: 6px; justify-content: center; }
+.cell { flex: 1; min-width: 0; max-width: 140px; }
+.cell label { margin-bottom: 2px; text-align: center; }
+@media (max-width: 720px) { .groups { grid-template-columns: 1fr; } }
+.cell input { padding: 6px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cell input.hit { border-color: var(--good); background: var(--good-bg); color: var(--good); }
+.cell small { display: block; font-size: 10px; color: var(--faint); margin-top: 3px; line-height: 1.25; }
+.more { margin-top: 10px; }
 .more[open] .groups { margin-top: 8px; }
+.form { margin-top: 12px; display: grid; gap: 4px; }
+.form-line { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.form-team { min-width: 190px; }
 .fold-result { margin-top: 12px; }
-.form { margin-top: 10px; }
-.form h3 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
-.form-line { display: flex; align-items: center; gap: 4px; margin: 2px 0; flex-wrap: wrap; }
-.form-team { min-width: 180px; }
-.form-badge { display: inline-block; width: 20px; text-align: center; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; cursor: default; }
-.form-badge.W { background: var(--good); } .form-badge.D { background: var(--muted); } .form-badge.L { background: var(--bad); }
 .fold-result p { margin: 4px 0; }
-.fold-result table { background: var(--panel); }
 </style>
 </head>
 <body>
-<header>
-  <h1>ninty-five</h1>
-  <p>Dixon-Coles match model vs. your bookmaker's odds. Open a match, type the prices you see, get edge and stake.</p>
-</header>
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="logo">ninty-five<span>model vs. Danske Spil</span></div>
+    <button class="icon-btn primary" id="loadboard" title="Fetch the latest fixtures and results">↻ Refresh</button>
+    <button class="icon-btn" id="settings-btn" title="Settings">⚙ Settings</button>
+    <button class="icon-btn" id="theme-btn" title="Light / dark">◐</button>
+  </div>
+  <div class="chips-bar"><div class="chips" id="chips"></div></div>
+</div>
 <main>
-  <section>
-    <h2>Matches</h2>
-    <div class="row" style="margin-top:0">
-      <div style="width:110px"><label>Next days</label><input id="days" type="number" value="7" min="1" max="30"></div>
-      <div style="width:150px"><label>Min edge for list (%)</label><input id="boardedge" type="number" value="8" step="1"></div>
-      <div style="align-self:end"><button id="loadboard">Fetch matches</button></div>
+  <div class="summary" id="summary"></div>
+
+  <div class="panel" id="settings" hidden>
+    <h2>Settings</h2>
+    <div class="grid">
+      <div><label>Next days</label><input id="days" type="number" value="7" min="1" max="30"></div>
+      <div><label>Min edge for the list (%)</label><input id="boardedge" type="number" value="8" step="1"></div>
+      <div><label>Bankroll (kr)</label><input id="bankroll" type="number" value="1000"></div>
+      <div><label>Model weight α (0 = market, 1 = model)</label><input id="alpha" type="number" step="0.05" value="0.5"></div>
+      <div><label>Kelly fraction</label><input id="kelly" type="number" step="0.05" value="0.25"></div>
+      <div><label>Max stake (% bankroll)</label><input id="maxstake" type="number" step="0.5" value="3"></div>
+      <div><label>Min edge to bet (EV %)</label><input id="minedge" type="number" step="0.5" value="3"></div>
     </div>
-    <details style="margin-top:12px">
-      <summary>Settings</summary>
-      <div class="grid" style="margin-top:8px">
-        <div><label>Bankroll (kr)</label><input id="bankroll" type="number" value="1000"></div>
-        <div><label>Model weight α (0 = market, 1 = model)</label><input id="alpha" type="number" step="0.05" value="0.5"></div>
-        <div><label>Kelly fraction</label><input id="kelly" type="number" step="0.05" value="0.25"></div>
-        <div><label>Max stake (% bankroll)</label><input id="maxstake" type="number" step="0.5" value="3"></div>
-        <div><label>Min edge to bet (EV %)</label><input id="minedge" type="number" step="0.5" value="3"></div>
-      </div>
-    </details>
-    <div class="chips" id="chips"></div>
-    <p class="muted" id="import-help">Danske Spil button: drag <a id="bookmarklet" class="bookmarklet" href="#">→ ninty-five</a> to your bookmarks bar. On a Danske Spil match page, click it to bring that match's odds here.</p>
+    <p class="muted" id="import-help" style="margin-bottom:0">Danske Spil button: drag <a id="bookmarklet" class="bookmarklet" href="#">→ ninty-five</a> to your bookmarks bar. On a Danske Spil match page, click it to bring that match's odds here.</p>
+  </div>
+
+  <section>
+    <div class="board-head"><h2>Matches</h2><span class="muted" id="board-info">Prices shown are the minimum Danske Spil odds worth betting at.</span></div>
     <div class="note" id="import-note" hidden></div>
-    <p class="muted" id="board-info">Figures are the minimum Danske Spil odds worth betting at. Click a match to fold it open and type the real odds.</p>
-    <div class="scroll"><table id="board"></table></div>
+    <div id="board"></div>
   </section>
 
   <section>
@@ -141,7 +192,6 @@ const MORE_GROUPS = [
   ["Over/Under 3.5", ["Over 3.5", "Under 3.5"]],
 ];
 const BOARD_COLS = ["1", "X", "2", "Over 2.5", "Under 2.5", "BTTS Yes"];
-const NCOLS = 3 + BOARD_COLS.length;
 
 const $ = id => document.getElementById(id);
 const pct = (x, d = 1) => x == null ? "–" : (100 * x).toFixed(d) + "%";
@@ -177,7 +227,7 @@ function settings() {
 const boardEdge = () => +$("boardedge").value / 100;
 
 // ------------------------------------------------------------------ board
-const hhmm = iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const hhmm = iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 let fetchedDays = 0;     // day window of the last refresh
 let refreshing = false;
 
@@ -188,7 +238,7 @@ function setBoard(r, extra = "") {
     if (f) open.fixture = f; else open = null;
   }
   const updated = r.fetched_at ? ` · updated ${hhmm(r.fetched_at)}` : "";
-  $("board-info").textContent = `${board.length} matches${updated}${extra}. Figures are minimum odds (model only, edge ≥ ${$("boardedge").value}%). Click a match to fold it open.`;
+  $("board-info").textContent = `${board.length} matches${updated}${extra} · prices are the minimum odds worth betting (edge ≥ ${$("boardedge").value}%) · click a match to open it`;
   renderBoard();
 }
 
@@ -210,7 +260,7 @@ async function refreshBoard() {
   const first = !board.length;
   $("board-info").textContent = first
     ? "Fetching fixtures and fitting the model (the very first run downloads ~3 seasons and can take a few minutes)…"
-    : $("board-info").textContent.replace(/\. Figures.*/, "") + " · refreshing…";
+    : $("board-info").textContent.replace(/ · prices.*/, "") + " · refreshing…";
   try {
     const r = await api(`/api/fixtures/refresh?${boardQuery()}`, { method: "POST" });
     fetchedDays = Math.max(fetchedDays, +$("days").value);
@@ -254,22 +304,59 @@ function renderBoard() {
   const focusId = mk ? null : active && active.id && active.closest && active.closest("#board") ? active.id : null;
   const caret = active && typeof active.selectionStart === "number" ? active.selectionStart : null;
   renderChips();
-  const head = `<tr><th>Kick-off</th><th>Competition</th><th>Match</th>${BOARD_COLS.map(m => `<th>${m}</th>`).join("")}</tr>`;
-  const add = `<tr class="add${open && open.key === "manual" ? " open" : ""}" data-key="manual"><td colspan="${NCOLS}"><span class="caret">${open && open.key === "manual" ? "▾" : "+"}</span>Add a match that isn't listed</td></tr>`;
-  const rows = board.filter(f => league === "All" || f.competition === league).map(f => {
-    const key = f.key, isOpen = open && open.key === key;
-    const ko = new Date(f.kickoff).toLocaleString([], { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-    const thin = f.rated && Math.min(...f.data_matches) < 10 ? " ⚠" : "";
-    const cells = f.rated ? BOARD_COLS.map(m => `<td>${num(f.min_odds[m])}</td>`).join("") : `<td colspan="${BOARD_COLS.length}" class="muted">no rating</td>`;
-    return `<tr class="match${isOpen ? " open" : ""}" data-key="${key}"><td>${ko}</td><td>${esc(f.detail || f.competition)}</td><td><span class="caret">${isOpen ? "▾" : "▸"}</span>${esc(f.home)} – ${esc(f.away)}${thin}</td>${cells}</tr>`
-      + (isOpen ? foldRow() : "");
-  }).join("");
-  $("board").innerHTML = head + add + (open && open.key === "manual" ? foldRow() : "") +
-    (rows || `<tr><td colspan="${NCOLS}" class="muted">${board.length ? "No matches in this league." : "No matches stored yet. Click Fetch matches."}</td></tr>`);
-  document.querySelectorAll("#board tr[data-key]").forEach(tr => tr.onclick = () => toggle(tr.dataset.key));
+  const add = `<div class="match add${open && open.key === "manual" ? " open" : ""}" data-key="manual">
+      <div class="mrow">＋ Add a match that isn't listed</div>${open && open.key === "manual" ? foldRow() : ""}</div>`;
+  const visible = board.filter(f => league === "All" || f.competition === league);
+  let html = add, lastDay = null;
+  for (const f of visible) {
+    const day = dayLabel(f.kickoff);
+    if (day !== lastDay) { html += `<div class="day">${day}</div>`; lastDay = day; }
+    html += matchCard(f);
+  }
+  if (!visible.length) html += `<div class="empty">${board.length ? "No matches in this league." : "No matches stored yet. Press ↻ Refresh."}</div>`;
+  $("board").innerHTML = html;
+  document.querySelectorAll("#board .match > .mrow").forEach(r => r.onclick = () => toggle(r.parentElement.dataset.key));
   if (open) wireFold();
   const again = mk ? document.querySelector(`#board [data-market="${mk}"]`) : focusId ? $(focusId) : null;
   if (again) { again.focus(); if (caret != null) try { again.setSelectionRange(caret, caret); } catch {} }
+}
+
+const PILL_LABELS = { "1": "1", "X": "X", "2": "2", "Over 2.5": "O 2.5", "Under 2.5": "U 2.5", "BTTS Yes": "BTTS" };
+
+function dayLabel(iso) {
+  const d = new Date(iso), today = new Date();
+  const diff = Math.round((new Date(d.toDateString()) - new Date(today.toDateString())) / 864e5);
+  const date = d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+  return diff === 0 ? `Today · ${date}` : diff === 1 ? `Tomorrow · ${date}` : date;
+}
+
+// Last results as coloured dots (most recent first); hover for the score.
+function dots(team, games) {
+  if (!games || !games.length) return "";
+  return `<span class="dots">${games.map(g => `<i class="${g.result}" title="${g.date} · ${g.venue === "A"
+    ? `${esc(g.opponent)} v ${esc(team)} ${g.ga}-${g.gf}` : `${esc(team)} v ${esc(g.opponent)} ${g.gf}-${g.ga}`}${g.venue === "N" ? " (neutral)" : ""}"></i>`).join("")}</span>`;
+}
+
+function matchCard(f) {
+  const isOpen = open && open.key === f.key;
+  const t = new Date(f.kickoff);
+  const hhmmK = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  const wd = t.toLocaleDateString([], { weekday: "short" });
+  const thin = f.rated && Math.min(...f.data_matches) < 10 ? `<span class="badge" title="Few recent matches for one side: treat with caution">thin data</span>` : "";
+  const form = f.form || { home: [], away: [] };
+  const prices = f.rated
+    ? BOARD_COLS.map(m => `<div class="pill"><small>${PILL_LABELS[m]}</small>${num(f.min_odds[m])}</div>`).join("")
+    : `<span class="unrated">no rating</span>`;
+  return `<div class="match${isOpen ? " open" : ""}" data-key="${esc(f.key)}">
+    <div class="mrow">
+      <div class="time"><span>${wd}</span><b>${hhmmK}</b></div>
+      <div class="teams">
+        <div class="team"><span class="name">${esc(f.home)}</span>${dots(f.home, form.home)}</div>
+        <div class="team"><span class="name">${esc(f.away)}</span>${dots(f.away, form.away)}</div>
+        <div class="meta">${esc(f.detail || f.competition)}${f.neutral ? " · neutral venue" : ""} ${thin}</div>
+      </div>
+      <div class="prices">${prices}</div>
+    </div>${isOpen ? foldRow() : ""}</div>`;
 }
 
 function toggle(key, preset = null) {
@@ -295,16 +382,15 @@ function oddsGroups(groups) {
     </div></div>`).join("")}</div>`;
 }
 
-// Last five results per team, most recent first.
+// Last five results per team in the fold-down, with dates on hover.
 function formBlock(f) {
   if (!f.form) return "";
   const line = (team, games) => {
     if (!games.length) return `<div class="form-line"><span class="form-team">${esc(team)}</span><span class="muted">no recent results</span></div>`;
-    const asOf = f.dataset === "INTL" ? ` <span class="muted">as of ${games[0].date}</span>` : "";
-    return `<div class="form-line"><span class="form-team">${esc(team)}</span>${games.map(g =>
-      `<span class="form-badge ${g.result}" title="${g.date} · ${g.venue === "A" ? `${esc(g.opponent)} v ${esc(team)} ${g.ga}-${g.gf}` : `${esc(team)} v ${esc(g.opponent)} ${g.gf}-${g.ga}`}${g.venue === "N" ? " (neutral)" : ""}">${g.result}</span>`).join("")}${asOf}</div>`;
+    const asOf = f.dataset === "INTL" ? `<span class="muted">as of ${games[0].date}</span>` : "";
+    return `<div class="form-line"><span class="form-team">${esc(team)}</span>${dots(team, games)}${asOf}</div>`;
   };
-  return `<div class="form"><h3>Form (last five, most recent first)</h3>${line(f.home, f.form.home)}${line(f.away, f.form.away)}</div>`;
+  return `<div class="form"><h3 class="sub">Form · last five, most recent first</h3>${line(f.home, f.form.home)}${line(f.away, f.form.away)}</div>`;
 }
 
 function foldRow() {
@@ -317,16 +403,16 @@ function foldRow() {
       <div><label>Away / team 2</label><input id="f-away" list="teams" autocomplete="off" value="${esc(open.away)}"></div>
       <div style="align-self:end"><label class="check"><input type="checkbox" id="f-neutral"${open.neutral ? " checked" : ""}> Neutral venue</label></div>
     </div><p class="muted" id="f-info" style="margin-top:-4px"></p>` : "";
-  return `<tr class="fold"><td colspan="${NCOLS}">${teams}
+  return `<div class="fold">${teams}
     ${oddsGroups(MAIN_GROUPS)}
     <details class="more"><summary>More markets (double chance, over/under 1.5 and 3.5)</summary>${oddsGroups(MORE_GROUPS)}</details>
     ${manual ? "" : formBlock(open.fixture)}
     <div class="fold-result" id="f-result"></div>
-  </td></tr>`;
+  </div>`;
 }
 
 function wireFold() {
-  const fold = document.querySelector("#board tr.fold");
+  const fold = document.querySelector("#board .fold");
   let t;
   fold.querySelectorAll("[data-market]").forEach(el => el.addEventListener("input", () => {
     open.odds[el.dataset.market] = el.value; markHits(); clearTimeout(t); t = setTimeout(evaluate, 300);
@@ -459,7 +545,7 @@ async function handleImport() {
   await boardReady;
   const n = Object.keys(r.odds).length;
   if (!n) { showImportNote("No odds found on that page. Open a single match on Danske Spil (not the overview) and click the button again."); return; }
-  const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   if (r.match_key && board.find(f => f.key === r.match_key)) {
     league = "All";
     toggle(r.match_key, { odds: toText(r.odds) });
@@ -468,7 +554,7 @@ async function handleImport() {
     toggle("manual", { home: "", away: "", odds: toText(r.odds) });
     showImportNote(`Imported ${n} prices for ${r.home || "?"} – ${r.away || "?"} at ${at}, but couldn't find that match on the board. Pick the two teams below.`);
   }
-  document.querySelector("#board tr.open")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  document.querySelector("#board .match.open")?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function showImportNote(msg) { const n = $("import-note"); n.textContent = msg; n.hidden = false; }
@@ -551,6 +637,12 @@ async function loadBets() {
     ["Avg CLV", s.avg_clv == null ? "–" : `${pct(s.avg_clv)} (n=${s.n_clv})`],
   ].map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join("");
   const o = s.outlook;
+  $("summary").innerHTML = o ? [
+    ["Open bets", `${num(o.staked, 0)} kr`],
+    ["Expected profit", `<span class="${o.expected_pnl >= 0 ? "pos" : "neg"}">${o.expected_pnl >= 0 ? "+" : ""}${num(o.expected_pnl, 0)} kr</span>`],
+    ["Chance of profit", pct(o.p_profit, 0)],
+    ["Settled P/L", `<span class="${s.pnl >= 0 ? "pos" : "neg"}">${num(s.pnl, 0)} kr</span>`],
+  ].map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join("") : "";
   $("outlook").innerHTML = o ? `<h3 class="sub">Open bets</h3>
     <div class="kpis">
       <div class="kpi"><span>Staked</span><b>${num(o.staked, 0)} kr</b></div>
@@ -575,6 +667,13 @@ async function loadBets() {
 
 // ------------------------------------------------------------------ init
 $("loadboard").onclick = refreshBoard;
+$("settings-btn").onclick = () => { const p = $("settings"); p.hidden = !p.hidden; };
+const applyTheme = t => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; };
+applyTheme(store.get("theme"));
+$("theme-btn").onclick = () => {
+  const next = document.documentElement.dataset.theme === "light" ? "" : "light";
+  store.set("theme", next); applyTheme(next);
+};
 // Settings and the board edge change the numbers in an open match.
 ["bankroll", "alpha", "kelly", "maxstake", "minedge", "boardedge"].forEach(id =>
   $(id).addEventListener("change", () => { if (open) evaluate(); }));
