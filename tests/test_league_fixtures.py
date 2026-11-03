@@ -8,6 +8,7 @@ from ninty_five import league_fixtures
 DATA = Path(__file__).parent / "data"
 SAMPLE_MAIN = (DATA / "fdcu_fixtures.csv").read_bytes()
 SAMPLE_EXTRA = (DATA / "fdcu_new_league_fixtures.csv").read_bytes()
+REAL_DIVISION_TEAMS = league_fixtures._division_teams  # conftest replaces it per test
 
 
 def uk(s):
@@ -89,7 +90,7 @@ def test_results_uses_current_season_refresh(monkeypatch):
     monkeypatch.setattr(league_fixtures.data, "load_club_league", fake)
     league_fixtures._cache.clear()
     df = league_fixtures.results("E2")
-    assert seen == {"code": "E2", "n_seasons": 1, "refresh_current": True} and len(df) == 1
+    assert seen == {"code": "E2", "n_seasons": 2, "refresh_current": True} and len(df) == 1
     league_fixtures.results("E2")  # cached: no second download
     assert seen["code"] == "E2"
 
@@ -130,3 +131,26 @@ def test_upcoming_resolves_names_and_flags_unknown(monkeypatch):
 def test_division_teams_from_current_results(monkeypatch):
     monkeypatch.setattr(league_fixtures, "results", lambda div: pd.DataFrame({"home": ["A", "B"], "away": ["C", "A"]}))
     assert sorted(league_fixtures._division_teams_live("E2")) == ["A", "B", "C"]
+
+
+def test_match_result_ignores_meetings_before_first_listed():
+    # Superliga: same home v away twice in a season. Only the earlier game is in
+    # the file yet; it must not settle the later one.
+    res = _res([("2027-03-10", "Midtjylland", "Brondby", 3, 0)])
+    ko = pd.Timestamp("2027-03-31T17:00Z")
+    assert league_fixtures.match_result(res, "Midtjylland", "Brondby", ko, not_before=pd.Timestamp("2027-03-28")) is None
+    # a match moved to a later day still finds its result
+    res2 = _res([("2027-04-07", "Midtjylland", "Brondby", 1, 1)])
+    assert league_fixtures.match_result(res2, "Midtjylland", "Brondby", ko, not_before=pd.Timestamp("2027-03-28")) == (1, 1)
+
+
+def test_division_teams_unavailable_fails_the_source(monkeypatch):
+    def down(div):
+        raise OSError("site down")
+
+    monkeypatch.setattr(league_fixtures, "results", down)
+    monkeypatch.setattr(league_fixtures, "_division_teams", REAL_DIVISION_TEAMS)
+    monkeypatch.setattr(league_fixtures, "_fetch", lambda url: SAMPLE_MAIN if url == league_fixtures.FIXTURES_URL
+                        else SAMPLE_EXTRA)
+    with pytest.raises(OSError):
+        league_fixtures.upcoming(7, now=pd.Timestamp("2026-11-03 00:00", tz="UTC"))

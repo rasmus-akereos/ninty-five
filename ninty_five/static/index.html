@@ -301,8 +301,20 @@ async function refreshBoard() {
     setBoard(r, settled + warn);
     if (settled) loadBets();
     loadTrack();
+    if ((r.warnings || []).includes("Refresh already running")) waitForRunningRefresh(r.fetched_at);
   } catch (e) { $("board-info").textContent = e.message; }
   finally { refreshing = false; }
+}
+
+// Another fetch (e.g. the daily one at start-up) is running: show its board
+// as soon as it is stored. Checks the stored board every 15 s for 10 minutes.
+async function waitForRunningRefresh(before) {
+  for (let i = 0; i < 40; i++) {
+    await new Promise(res => setTimeout(res, 15000));
+    let r;
+    try { r = await api(`/api/fixtures?${boardQuery()}`); } catch { continue; }
+    if (r.fetched_at !== before) { setBoard(r); loadBets(); loadTrack(); return; }
+  }
 }
 
 async function initBoard() {

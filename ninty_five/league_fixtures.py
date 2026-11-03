@@ -119,12 +119,11 @@ def _division_teams_live(division: str) -> list[str]:
 
 
 def _division_teams(division: str) -> list[str] | None:
-    """The division's current-season teams, or None if unavailable (then
-    fixture names are used as they are)."""
-    try:
-        return _division_teams_live(division)
-    except Exception:
-        return None
+    """The division's teams over this season and last (so newly promoted or
+    relegated clubs are known before their first match). Raises when the list
+    can't be loaded: fixture names are never used unchecked. (Tests replace
+    this with a stub returning None, meaning "use names as they are".)"""
+    return _division_teams_live(division)
 
 
 def _resolve(df: pd.DataFrame) -> pd.DataFrame:
@@ -169,17 +168,26 @@ def upcoming(days: int, now: pd.Timestamp | None = None) -> pd.DataFrame:
 
 
 def results(division: str) -> pd.DataFrame:
-    """A division's results (data.COLUMNS), current season freshly downloaded."""
+    """A division's results (data.COLUMNS) for this season and last, the
+    current season freshly downloaded."""
     return _memo(f"results:{division}",
-                 lambda: data.load_club_league(division, n_seasons=1, refresh_current=True))
+                 lambda: data.load_club_league(division, n_seasons=2, refresh_current=True))
 
 
-def match_result(res: pd.DataFrame, home: str, away: str, kickoff: pd.Timestamp) -> tuple[int, int] | None:
+def match_result(res: pd.DataFrame, home: str, away: str, kickoff: pd.Timestamp,
+                 not_before: pd.Timestamp | None = None) -> tuple[int, int] | None:
     """The result of home v away played closest to `kickoff`, within 30 days
-    (so a match moved to another day still finds its result)."""
+    (so a match moved to another day still finds its result), and not before
+    `not_before` (the day the match was first listed as upcoming: an earlier
+    meeting of the same two teams, as after the Superliga split, is a
+    different match)."""
     k = pd.Timestamp(kickoff)
     k = k.tz_convert(None) if k.tzinfo else k
     games = res[(res["home"] == home) & (res["away"] == away)]
+    if not_before is not None:
+        nb = pd.Timestamp(not_before)
+        nb = nb.tz_convert(UK).tz_localize(None) if nb.tzinfo else nb
+        games = games[pd.to_datetime(games["date"]) >= nb.normalize()]
     if games.empty:
         return None
     gap = (pd.to_datetime(games["date"]) - k.normalize()).abs()

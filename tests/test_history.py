@@ -156,3 +156,26 @@ def test_runs_recorded(tmp_path):
     assert h.last_success("auto") == "2026-11-02T07:01:00+00:00"
     assert h.last_success() == "2026-11-03T09:01:00+00:00"
     assert h.last_run("manual")["warnings"] == ["x"] and h.last_run("manual")["matches"] == 41
+
+
+def _fdcu(key, kickoff):
+    return {"key": key, "dataset": "ENG", "match_id": None, "kickoff": kickoff, "competition": "England 3",
+            "detail": "", "stage": "", "home": "Oxford", "away": "Reading", "neutral": False, "rated": False}
+
+
+def test_moved_lower_league_match_keeps_its_key(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    h.save_board([_fdcu("fdcu:E2:2026-11-04:Oxford:Reading", "2026-11-04T19:45:00+00:00")], "2026-11-02T07:00:00+00:00")
+    moved = _fdcu("fdcu:E2:2026-11-11:Oxford:Reading", "2026-11-11T19:45:00+00:00")
+    h.save_board([moved], "2026-11-05T07:00:00+00:00")
+    rows = h.board(days=30, now=pd.Timestamp("2026-11-03T12:00Z"))
+    assert [(r["key"], r["kickoff"]) for r in rows] == [("fdcu:E2:2026-11-04:Oxford:Reading", "2026-11-11T19:45:00+00:00")]
+    assert moved["key"] == "fdcu:E2:2026-11-04:Oxford:Reading"  # callers see the stored key
+
+
+def test_finished_meeting_is_not_reused(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    h.save_board([_fdcu("fdcu:E2:2026-11-04:Oxford:Reading", "2026-11-04T19:45:00+00:00")], "2026-11-02T07:00:00+00:00")
+    h.set_result("fdcu:E2:2026-11-04:Oxford:Reading", 1, 0, "FINISHED")
+    h.save_board([_fdcu("fdcu:E2:2026-11-25:Oxford:Reading", "2026-11-25T19:45:00+00:00")], "2026-11-22T07:00:00+00:00")
+    assert h.match("fdcu:E2:2026-11-25:Oxford:Reading") is not None

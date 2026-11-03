@@ -104,6 +104,8 @@ class HistoryStore:
         written = 0
         with self._conn() as c:
             for r in rows:
+                if r["key"].startswith("fdcu:"):
+                    r["key"] = self._stable_key(c, r)
                 c.execute(
                     """INSERT INTO matches (key, dataset, match_id, competition, detail, stage, kickoff,
                                             home, away, neutral, first_seen, last_seen)
@@ -196,6 +198,23 @@ class HistoryStore:
         with self._conn() as c:
             row = c.execute(sql + " ORDER BY finished DESC LIMIT 1", args).fetchone()
         return row["finished"] if row else None
+
+    @staticmethod
+    def _stable_key(c: sqlite3.Connection, r: dict) -> str:
+        """Lower-league keys carry the kick-off date (the files have no match
+        id). When a match moves to another day, keep the key it was stored
+        under: an unfinished row for the same division and teams within 30
+        days is the same match."""
+        div = r["key"].split(":")[1]
+        ko = pd.Timestamp(r["kickoff"])
+        for old in c.execute(
+            "SELECT key, kickoff FROM matches WHERE key LIKE ? AND home = ? AND away = ? AND key != ? "
+            "AND home_goals IS NULL AND status IS NULL",
+            (f"fdcu:{div}:%", r["home"], r["away"], r["key"]),
+        ):
+            if abs(pd.Timestamp(old["kickoff"]) - ko) <= pd.Timedelta(days=30):
+                return old["key"]
+        return r["key"]
 
     def fetched_at(self) -> str | None:
         with self._conn() as c:

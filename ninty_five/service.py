@@ -263,7 +263,8 @@ def update_results(history, bets, now: pd.Timestamp) -> list[int]:
             continue
         for p in (p for p in lower if p["key"].split(":")[1] == division):
             m = history.match(p["key"])
-            got = league_fixtures.match_result(res, m["home"], m["away"], pd.Timestamp(p["kickoff"]))
+            listed = pd.Timestamp(m["first_seen"]) if m["first_seen"][:1].isdigit() else None
+            got = league_fixtures.match_result(res, m["home"], m["away"], pd.Timestamp(p["kickoff"]), not_before=listed)
             if got is not None:
                 found[p["key"]] = got
                 history.set_result(p["key"], *got, "FINISHED")

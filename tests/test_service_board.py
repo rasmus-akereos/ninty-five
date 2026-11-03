@@ -203,3 +203,15 @@ def test_run_refresh_refits_country_models(tmp_path, monkeypatch):
         "warnings": [], "auto_settled": [], "snapshots": 0, "matches": 0})
     service.run_refresh(h, bets, 7, "auto", refit_countries=True)
     assert refits == [(k, "current") for k in ["ENG", "GER", "ESP", "ITA", "FRA", "DEN"]]
+
+
+def test_update_results_fdcu_ignores_earlier_meeting(tmp_path, monkeypatch):
+    h, bets, key, bid = _store_fdcu(tmp_path, "2026-11-08T15:00:00+00:00")  # first seen "t" → set below
+    with h._conn() as c:
+        c.execute("UPDATE matches SET first_seen = '2026-11-05T07:00:00+00:00' WHERE key = ?", (key,))
+    _no_other_sources(monkeypatch)
+    monkeypatch.setattr(league_fixtures, "results", lambda div: pd.DataFrame(
+        [(pd.Timestamp("2026-10-20"), "Wigan", "Bolton", 3, 0, False, "x")],
+        columns=["date", "home", "away", "hg", "ag", "neutral", "competition"]))
+    assert service.update_results(h, bets, pd.Timestamp("2026-11-09T07:00Z")) == []
+    assert bets.list()[0]["status"] == "open"
