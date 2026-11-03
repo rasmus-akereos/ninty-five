@@ -55,3 +55,23 @@ def test_unrated_row_has_no_snapshot(tmp_path):
 
 def test_fetched_at_empty(tmp_path):
     assert HistoryStore(tmp_path / "h.sqlite").fetched_at() is None
+
+
+def _sel(market, odds):
+    return {"market": market, "odds": odds, "p_model": 0.4, "p_market": 0.35, "p_blend": 0.375}
+
+
+def test_record_odds_skips_unchanged_and_invalid(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    assert h.record_odds("fd:1", "EUROPE", "A", "B", [_sel("1", 2.0)], "t1") == 1
+    assert h.record_odds("fd:1", "EUROPE", "A", "B", [_sel("1", 2.0), _sel("X", 1.0)], "t2") == 0
+    assert h.record_odds("fd:1", "EUROPE", "A", "B", [_sel("1", 2.7)], "t3") == 1
+    assert h.last_odds("fd:1", "EUROPE", "A", "B") == {"1": {"odds": 2.7, "entered_at": "t3"}}
+
+
+def test_manual_match_odds_keyed_by_teams(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    h.record_odds(None, "INTL", "Denmark", "Scotland", [_sel("Over 2.5", 2.1)], "t1")
+    assert h.last_odds(None, "INTL", "Denmark", "Scotland")["Over 2.5"]["odds"] == 2.1
+    assert h.last_odds(None, "INTL", "Scotland", "Denmark") == {}
+    assert h.last_odds("fd:1", "INTL", "Denmark", "Scotland") == {}  # keyed lookups ignore manual rows

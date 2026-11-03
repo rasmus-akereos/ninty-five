@@ -159,3 +159,45 @@ class HistoryStore:
                 )
             out.append(row)
         return sorted(out, key=lambda x: pd.Timestamp(x["kickoff"]))
+
+    # -------------------------------------------------------- typed odds
+    @staticmethod
+    def _identity(match_key: str | None, dataset: str, home: str, away: str) -> tuple[str, tuple]:
+        """Board matches are identified by key; hand-added ones by teams."""
+        if match_key:
+            return "match_key = ?", (match_key,)
+        return "match_key IS NULL AND dataset = ? AND home = ? AND away = ?", (dataset, home, away)
+
+    def last_odds(self, match_key: str | None, dataset: str, home: str, away: str) -> dict[str, dict]:
+        where, args = self._identity(match_key, dataset, home, away)
+        with self._conn() as c:
+            rows = c.execute(
+                f"""SELECT market, odds, entered_at FROM odds_entries
+                    WHERE id IN (SELECT MAX(id) FROM odds_entries WHERE {where} GROUP BY market)""",
+                args,
+            ).fetchall()
+        return {r["market"]: {"odds": r["odds"], "entered_at": r["entered_at"]} for r in rows}
+
+    def record_odds(
+        self, match_key: str | None, dataset: str, home: str, away: str, selections: list[dict], entered_at: str
+    ) -> int:
+        """Store each typed price that is valid (> 1) and differs from the last
+        stored price for this match and market. Returns rows written."""
+        last = self.last_odds(match_key, dataset, home, away)
+        written = 0
+        with self._conn() as c:
+            for s in selections:
+                odds = s.get("odds")
+                if odds is None or odds <= 1:
+                    continue
+                prev = last.get(s["market"])
+                if prev and abs(prev["odds"] - odds) < 1e-9:
+                    continue
+                c.execute(
+                    """INSERT INTO odds_entries (match_key, dataset, home, away, entered_at, market, odds,
+                                                 p_model, p_market, p_blend) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (match_key or None, dataset, home, away, entered_at, s["market"], float(odds),
+                     s.get("p_model"), s.get("p_market"), s.get("p_blend")),
+                )
+                written += 1
+        return written
