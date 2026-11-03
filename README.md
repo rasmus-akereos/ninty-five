@@ -35,13 +35,19 @@ chmod 600 .env
 or register for a free key at https://www.football-data.org/client/register
 (see `.env.example`). Then click **Fetch matches**. The board lists upcoming
 Champions League, Premier League, Championship, Bundesliga, La Liga, Serie A,
-Ligue 1, Eredivisie and Primeira Liga games with the **minimum odds** worth
+Ligue 1, Eredivisie and Primeira Liga games, plus national-team matches
+(Nations League, World Cup and continental qualifiers, friendlies), with the
+**minimum odds** worth
 betting at, so you only have to check Danske Spil's prices. Filter by league
 with the buttons above the list. Click a match to **fold it open** right under
 its row and type the real odds: each box shows its minimum odds and turns green
 when the price is worth betting, and the edge and stake update as you type.
-Bets logged from the board **settle automatically** once the result is in
-(90-minute score).
+Club bets logged from the board **settle automatically** once the result is
+in (90-minute score); national-team bets are settled by hand.
+
+National-team fixtures come from ESPN's public scoreboard data (no key needed).
+It is an unofficial, undocumented feed, so it can change without notice; if it
+fails, the board still shows the club matches with a warning.
 
 The first fetch downloads three seasons (~27 requests). The free tier allows
 10 requests a minute, so expect about 3 minutes. After that only the current

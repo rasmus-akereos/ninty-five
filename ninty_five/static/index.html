@@ -167,18 +167,22 @@ async function loadBoard() {
   catch (e) { $("board-info").textContent = e.message; return; }
   board = r.fixtures;
   const settled = r.auto_settled.length ? ` · auto-settled ${r.auto_settled.length} bet(s)` : "";
-  $("board-info").textContent = `${board.length} matches${settled}. Figures are minimum odds (model only, edge ≥ ${$("boardedge").value}%). Click a match to fold it open.`;
+  const warn = (r.warnings || []).length ? ` ⚠ ${r.warnings.join(" · ")}` : "";
+  $("board-info").textContent = `${board.length} matches${settled}. Figures are minimum odds (model only, edge ≥ ${$("boardedge").value}%). Click a match to fold it open.${warn}`;
   if (settled) loadBets();
   open = null;
   renderBoard();
 }
+
+// Champions League and International first, then leagues alphabetically.
+const rank = n => n === "Champions League" ? 0 : n === "International" ? 1 : 2;
 
 function renderChips() {
   const counts = {};
   board.forEach(f => counts[f.competition] = (counts[f.competition] || 0) + 1);
   if (league !== "All" && !counts[league]) league = "All";
   const names = ["All", ...Object.keys(counts).sort((a, b) =>
-    (a === "Champions League" ? -1 : b === "Champions League" ? 1 : a.localeCompare(b)))];
+    rank(a) - rank(b) || a.localeCompare(b))];
   $("chips").innerHTML = board.length ? names.map(n =>
     `<button class="chip${n === league ? " active" : ""}" data-league="${esc(n)}">${esc(n)}<span class="n">${n === "All" ? board.length : counts[n]}</span></button>`).join("") : "";
   document.querySelectorAll("#chips .chip").forEach(b => b.onclick = () => {
@@ -197,7 +201,7 @@ function renderBoard() {
     const ko = new Date(f.kickoff).toLocaleString([], { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
     const thin = f.rated && Math.min(...f.data_matches) < 10 ? " ⚠" : "";
     const cells = f.rated ? BOARD_COLS.map(m => `<td>${num(f.min_odds[m])}</td>`).join("") : `<td colspan="${BOARD_COLS.length}" class="muted">no rating</td>`;
-    return `<tr class="match${isOpen ? " open" : ""}" data-key="${key}"><td>${ko}</td><td>${esc(f.competition)}</td><td><span class="caret">${isOpen ? "▾" : "▸"}</span>${esc(f.home)} – ${esc(f.away)}${thin}</td>${cells}</tr>`
+    return `<tr class="match${isOpen ? " open" : ""}" data-key="${key}"><td>${ko}</td><td>${esc(f.detail || f.competition)}</td><td><span class="caret">${isOpen ? "▾" : "▸"}</span>${esc(f.home)} – ${esc(f.away)}${thin}</td>${cells}</tr>`
       + (isOpen ? foldRow() : "");
   }).join("");
   $("board").innerHTML = head + add + (open && open.key === "manual" ? foldRow() : "") +

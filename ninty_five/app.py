@@ -83,10 +83,10 @@ def datasets() -> dict[str, str]:
 
 @app.get("/api/fixtures")
 def fixture_board(days: int = 7, min_edge: float = 0.08) -> dict:
-    """Upcoming CL + top-league matches with model prices. Also settles any
+    """Upcoming club and national-team matches with model prices. Also settles any
     open bets whose matches have finished."""
     try:
-        rows = service.board(days=days, min_edge=min_edge)
+        rows, warnings = service.board(days=days, min_edge=min_edge)
     except fixtures.ApiKeyMissing as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
@@ -96,7 +96,7 @@ def fixture_board(days: int = 7, min_edge: float = 0.08) -> dict:
         settled = store.auto_settle(service.results_frame())
     except Exception as exc:  # settlement is best effort
         log.warning("auto-settle failed: %s", exc)
-    return {"fixtures": rows, "auto_settled": settled}
+    return {"fixtures": rows, "warnings": warnings, "auto_settled": settled}
 
 
 @app.get("/api/teams")

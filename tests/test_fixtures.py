@@ -79,7 +79,9 @@ def test_europe_board_and_auto_settle(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(fixtures, "upcoming", lambda days=7, competitions=None: upcoming)
     service._models.clear()
-    board = service.board(days=7, min_edge=0.1)
+    monkeypatch.setattr(service, "intl_board", lambda days, min_edge: [])
+    board, warnings = service.board(days=7, min_edge=0.1)
+    assert warnings == []
     assert board[0]["rated"] and not board[1]["rated"]
     p = board[0]["probabilities"]
     assert p["1"] + p["X"] + p["2"] == pytest.approx(1)

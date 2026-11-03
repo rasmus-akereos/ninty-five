@@ -56,10 +56,13 @@ def print_fixtures(days: int, min_edge: float) -> None:
         print(f"Auto-settled bets: {settled}\n")
     cols = ["1", "X", "2", "Over 2.5", "Under 2.5", "BTTS Yes"]
     rows = []
-    for f in board(days=days, min_edge=min_edge):
+    fixtures_, warnings = board(days=days, min_edge=min_edge)
+    for w in warnings:
+        print(f"Warning: {w}")
+    for f in fixtures_:
         r = {
             "kickoff": pd.Timestamp(f["kickoff"]).tz_convert("Europe/Copenhagen").strftime("%a %d %b %H:%M"),
-            "comp": f["competition"],
+            "comp": f["detail"] or f["competition"],
             "match": f"{f['home']} - {f['away']}",
         }
         if f["rated"]:
@@ -81,7 +84,7 @@ def main() -> None:
     r = sub.add_parser("ratings", help="print team ratings")
     r.add_argument("--dataset", default="INTL")
     r.add_argument("--top", type=int, default=30)
-    f = sub.add_parser("fixtures", help="upcoming CL/top-league matches with minimum odds")
+    f = sub.add_parser("fixtures", help="upcoming club and national-team matches with minimum odds")
     f.add_argument("--days", type=int, default=3)
     f.add_argument("--min-edge", type=float, default=0.08)
     b = sub.add_parser("backtest", help="walk-forward log-loss test")
