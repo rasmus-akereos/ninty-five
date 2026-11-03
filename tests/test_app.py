@@ -121,3 +121,24 @@ def test_import_odds_finds_board_match(client, monkeypatch):
 def test_page_is_not_cached(client):
     r = client.get("/")
     assert r.status_code == 200 and "no-cache" in r.headers.get("cache-control", "")
+
+
+def _league_row(key, competition):
+    return {**_row(), "key": key, "dataset": "ESP", "match_id": None, "competition": competition}
+
+
+def test_board_marks_unproven_division(client, monkeypatch):
+    rows = [_league_row("fdcu:SP2:x", "Spain 2"), _league_row("fdcu:I2:x", "Italy 2"), _row()]
+    monkeypatch.setattr(service, "build_board", lambda days: (rows, []))
+    app_mod.history.set_validation({"Spain 2": {"model": 1.02, "baseline": 1.01, "matches": 300},
+                                    "Italy 2": {"model": 1.00, "baseline": 1.01, "matches": 280}}, as_of="2026-11-03")
+    board = {f["key"]: f for f in client.post("/api/fixtures/refresh").json()["fixtures"]}
+    assert board["fdcu:SP2:x"]["unproven"] == {"model": 1.02, "baseline": 1.01}
+    assert "unproven" not in board["fdcu:I2:x"]
+    assert "unproven" not in board["fd:1"]  # existing leagues never carry it
+
+
+def test_board_unvalidated_new_division_is_unproven(client, monkeypatch):
+    monkeypatch.setattr(service, "build_board", lambda days: ([_league_row("fdcu:F2:x", "France 2")], []))
+    f = client.post("/api/fixtures/refresh").json()["fixtures"][0]
+    assert f["unproven"] == {"model": None, "baseline": None}

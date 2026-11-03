@@ -124,6 +124,18 @@ class HistoryStore:
             c.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('board_fetched_at', ?)", (fetched_at,))
         return written
 
+    def set_validation(self, results: dict, as_of: str) -> None:
+        """Merge per-league validation results ({label: {model, baseline, matches}})."""
+        merged = self.validation()
+        merged.update({k: {**v, "as_of": as_of} for k, v in results.items()})
+        with self._conn() as c:
+            c.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('validation', ?)", (json.dumps(merged),))
+
+    def validation(self) -> dict:
+        with self._conn() as c:
+            row = c.execute("SELECT value FROM meta WHERE key = 'validation'").fetchone()
+        return json.loads(row["value"]) if row else {}
+
     def fetched_at(self) -> str | None:
         with self._conn() as c:
             row = c.execute("SELECT value FROM meta WHERE key = 'board_fetched_at'").fetchone()

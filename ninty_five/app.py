@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import fixtures, import_odds, service, track
+from . import fixtures, import_odds, service, track, validate
 from .model import DixonColes, markets
 from .history import HistoryStore
 from .store import BetStore
@@ -93,8 +93,13 @@ STALE_AFTER = pd.Timedelta(hours=6)
 def _stored_board(days: int, min_edge: float) -> dict:
     fetched = history.fetched_at()
     stale = fetched is None or pd.Timestamp.now(tz="UTC") - pd.Timestamp(fetched) > STALE_AFTER
+    checks = history.validation()
+    rows = []
+    for r in service.with_min_odds(history.board(days), min_edge):
+        note = validate.unproven(r, checks)
+        rows.append({**r, "unproven": note} if note else r)
     return {
-        "fixtures": service.with_min_odds(history.board(days), min_edge),
+        "fixtures": rows,
         "fetched_at": fetched,
         "stale": stale,
     }

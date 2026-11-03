@@ -368,6 +368,7 @@ function matchCard(f) {
   const hhmmK = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   const wd = t.toLocaleDateString([], { weekday: "short" });
   const thin = f.rated && Math.min(...f.data_matches) < 10 ? `<span class="badge" title="Few recent matches for one side: treat with caution">thin data</span>` : "";
+  const unproven = f.unproven ? `<span class="badge" title="${esc(unprovenTip(f.unproven))}">model unproven</span>` : "";
   const form = f.form || { home: [], away: [] };
   const prices = f.rated
     ? BOARD_COLS.map(m => `<div class="pill"><small>${PILL_LABELS[m]}</small>${num(f.min_odds[m])}</div>`).join("")
@@ -378,10 +379,15 @@ function matchCard(f) {
       <div class="teams">
         <div class="team"><span class="name">${esc(f.home)}</span>${dots(f.home, form.home)}</div>
         <div class="team"><span class="name">${esc(f.away)}</span>${dots(f.away, form.away)}</div>
-        <div class="meta">${esc(f.detail || f.competition)}${f.neutral ? " · neutral venue" : ""} ${thin}</div>
+        <div class="meta">${esc(f.detail || f.competition)}${f.neutral ? " · neutral venue" : ""} ${thin} ${unproven}</div>
       </div>
       <div class="prices">${prices}</div>
     </div>${isOpen ? foldRow() : ""}</div>`;
+}
+
+function unprovenTip(u) {
+  return u.model == null ? "Not validated yet"
+    : `Model log loss ${u.model.toFixed(4)} vs baseline ${u.baseline.toFixed(4)} (lower is better)`;
 }
 
 function toggle(key, preset = null) {
@@ -431,6 +437,7 @@ function foldRow() {
   return `<div class="fold">${teams}
     ${oddsGroups(MAIN_GROUPS)}
     <details class="more"><summary>More markets (double chance, over/under 1.5 and 3.5)</summary>${oddsGroups(MORE_GROUPS)}</details>
+    ${!manual && open.fixture.unproven ? `<div class="note">Model unproven in this league: it hasn't beaten simple home/draw/away frequencies. Treat its prices with caution. <span class="muted">(${esc(unprovenTip(open.fixture.unproven))})</span></div>` : ""}
     ${manual ? "" : formBlock(open.fixture)}
     <div class="fold-result" id="f-result"></div>
   </div>`;

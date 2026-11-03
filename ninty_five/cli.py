@@ -75,6 +75,21 @@ def print_fixtures(days: int, min_edge: float) -> None:
     print(pd.DataFrame(rows).to_string(index=False))
 
 
+def run_validation(countries: list[str], start: str) -> None:
+    """Validate each country's new leagues, print the table and store it."""
+    from .history import HistoryStore
+    from .validate import validate_country
+
+    history = HistoryStore()
+    for key in countries:
+        out = validate_country(key, start=start)
+        history.set_validation(out, as_of=str(pd.Timestamp.now(tz="UTC").date()))
+        for label, r in out.items():
+            verdict = "beats baseline" if r["model"] < r["baseline"] else "MODEL UNPROVEN"
+            print(f"{label:10s}  model {r['model']:.4f}  baseline {r['baseline']:.4f}  "
+                  f"matches {r['matches']:5d}  {verdict}", flush=True)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="ninty-five")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -91,6 +106,9 @@ def main() -> None:
     b.add_argument("--dataset", default="INTL")
     b.add_argument("--start", default="2023-01-01")
     b.add_argument("--step-months", type=int, default=6)
+    v = sub.add_parser("validate", help="walk-forward check of the lower-league models (stored for the board)")
+    v.add_argument("--country", choices=["ENG", "GER", "ESP", "ITA", "FRA", "DEN"], action="append")
+    v.add_argument("--start", default="2024-08-01")
     args = p.parse_args()
 
     if args.cmd == "serve":
@@ -106,6 +124,8 @@ def main() -> None:
         print_fixtures(args.days, args.min_edge)
     elif args.cmd == "backtest":
         backtest(args.dataset, args.start, args.step_months)
+    elif args.cmd == "validate":
+        run_validation(args.country or ["ENG", "GER", "ESP", "ITA", "FRA", "DEN"], args.start)
 
 
 if __name__ == "__main__":
