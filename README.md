@@ -1,2 +1,140 @@
 # ninty-five
-Sports betting
+
+A small football betting tool. It fits a goal model to historical results,
+prices every common market, and compares those prices with the odds you type
+in from your bookmaker (built around Danske Spil, but any decimal odds work).
+It then shows the edge and a suggested stake, and keeps a log of your bets.
+
+## Run it
+
+```bash
+pip install -e ".[dev]"
+ninty-five serve          # open http://127.0.0.1:8000
+```
+
+1. Pick a data set: **International** (every national team worldwide, so
+   World Cup, Euros, qualifiers and Nations League) or a club league.
+2. Type the two teams. Tick *Neutral venue* for tournament matches.
+3. Copy the odds from Danske Spil. Commas (`2,15`) are fine. Enter **every
+   outcome** of a market (all of 1/X/2, both Over and Under) so the
+   bookmaker's margin can be removed.
+4. Green rows clear your minimum edge. *Log bet* stores them.
+5. After the match, *Settle* with the final score. Add the **closing odds**
+   (the last price before kick-off) whenever you can.
+
+Other commands:
+
+```bash
+ninty-five ratings --dataset INTL --top 30   # team strength table
+ninty-five backtest --dataset INTL           # walk-forward model test
+pytest
+```
+
+## Data
+
+| Data set | Source | Notes |
+|---|---|---|
+| `INTL` | [martj42/international_results](https://github.com/martj42/international_results) | All senior men's internationals; the model uses 2014 onward |
+| `E0`, `D1`, `SP1`, ... | football-data.co.uk season CSVs | Big European leagues, last 4 seasons |
+| `DNK`, `SWE`, `BRA`, `USA`, ... | football-data.co.uk "extra leagues" | Worldwide leagues |
+
+Files are cached in `data/`. The refresh endpoint (`POST /api/refresh?dataset=INTL`)
+downloads them again. Fixtures are not downloaded. You enter the match yourself.
+
+## Method
+
+### 1. Goal model (Dixon-Coles)
+
+Each team *i* has an attack strength `a_i` and a defence strength `d_i`:
+
+```
+λ_home = exp(μ + γ·H + a_home − d_away)
+λ_away = exp(μ +       a_away − d_home)
+```
+
+`μ` is the average log scoring rate and `γ` is home advantage. `H = 0` at a
+neutral venue. Goals are treated as Poisson, and the Dixon-Coles factor
+`τ(x, y; ρ)` corrects the 0-0, 1-0, 0-1 and 1-1 cells, because independent
+Poisson under-predicts draws.
+
+The parameters maximise a **weighted, penalised log-likelihood**:
+
+```
+Σ_k w_k · log P(score_k) − (κ/2) · Σ_i (a_i² + d_i²)
+w_k = 0.5 ^ (age_days / half_life)
+```
+
+* The time decay lets the model follow form without discarding history.
+* The ridge penalty `κ` ties the parameters down and pulls teams with little
+  data toward average. That matters for national teams, which play only about
+  10 matches a year.
+* The Poisson part has an analytic gradient and is solved with L-BFGS. `ρ` is
+  then fitted in 1-D with the λ's held fixed.
+
+The score matrix (0–10 goals each) gives every market: 1X2, double chance,
+O/U 0.5–4.5 and BTTS.
+
+**Hyper-parameters (international).** These were chosen by walk-forward
+testing: refit every 6 months from 2023-01 to 2026-07 and score competitive
+matches in the next 6 months by 1X2 log loss. The surface is flat for a
+half-life of 3–4 years and κ ≤ 0.5. We use half-life 1095 days and κ = 0.2.
+Down-weighting friendlies did not help. Result (`ninty-five backtest`):
+
+| | 1X2 log loss |
+|---|---|
+| Model | **0.839** |
+| Baseline (historical H/D/A frequencies) | 1.056 |
+| Uniform guess (ln 3) | 1.099 |
+
+The baseline is weak, so beating it is only a sanity check. The test that
+counts is beating the bookmaker's own probabilities, which this data set
+cannot do because it has no odds. The bet log (CLV, below) is how you find
+out.
+
+**Club leagues** use the Dixon-Coles paper's decay (half-life ≈ 1 year). They
+have not been tuned yet.
+
+### 2. Removing the bookmaker margin
+
+Implied probabilities `q_i = 1/odds_i` add up to more than 1. The excess is
+the margin, shown on screen. The **power method** finds `k` such that
+`Σ q_i^k = 1` and sets `p_i = q_i^k`. Compared with proportional scaling it
+takes more margin off longshots, which matches the favourite-longshot bias.
+Double-chance market probabilities are built from the de-margined 1X2 prices.
+
+### 3. Blending model and market
+
+```
+p = α · p_model + (1 − α) · p_market        (α = 0.5 by default)
+```
+
+The model knows nothing about injuries, line-ups, rotation or motivation, and
+the market does. With α = 1 the tool flags many false "value" longshots.
+Raise α only once your logged bets show positive CLV.
+
+### 4. Edge and stake
+
+```
+EV    = p · odds − 1
+Kelly = (p · odds − 1) / (odds − 1)
+stake = min(kelly_fraction · Kelly, max_stake_pct) · bankroll
+```
+
+The defaults are ¼-Kelly, a 3 % cap per bet and a 3 % minimum EV. Full
+Kelly assumes `p` is exact, which it never is.
+
+### 5. Measuring whether it works
+
+* **ROI** is noisy. At odds around 2.0, a few hundred bets are needed before
+  ROI separates skill from luck.
+* **CLV (closing line value)** = `your_odds / closing_odds − 1`. It converges
+  much faster and is the best early sign of a real edge. If average CLV stays
+  negative, the model is not beating the market, whatever the P/L says.
+
+## Known limitations
+
+* No accumulators. Bookmaker margins multiply across legs, and so do model
+  errors.
+* Team names must match the data source's spelling. The input box suggests
+  names as you type.
+* No line-up, injury or xG data, only scorelines.
