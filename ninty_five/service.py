@@ -21,15 +21,21 @@ log = logging.getLogger("ninty_five")
 
 
 def datasets() -> dict[str, str]:
-    return {"EUROPE": "Europe: Champions League + top leagues (auto fixtures)", **data_mod.available_datasets()}
+    return {"EUROPE": "Europe: Champions League + top leagues (auto fixtures)", **data_mod.COUNTRY_NAMES,
+            **data_mod.available_datasets()}
 
 
-def _fit(key: str, refresh: bool = False) -> tuple[DixonColes, pd.DataFrame]:
-    """Fit the model for a data set and return it with its training frame."""
+def _fit(key: str, refresh: bool | str = False) -> tuple[DixonColes, pd.DataFrame]:
+    """Fit the model for a data set and return it with its training frame.
+    `refresh="current"` re-downloads only a country's current season."""
     key = key.upper()
     if key == "EUROPE":
-        df, groups = fixtures.load_europe(refresh=refresh)
+        df, groups = fixtures.load_europe(refresh=bool(refresh))
         return DixonColes(**CLUB_PARAMS).fit(df, groups=groups), df
+    if key in data_mod.COUNTRIES:
+        df, groups = data_mod.load_country(key, refresh_current=bool(refresh))
+        return DixonColes(**CLUB_PARAMS).fit(df, groups=groups or None), df
+    refresh = bool(refresh)
     df = data_mod.load_dataset(key, refresh=refresh)
     return DixonColes(**(INTL_PARAMS if key == "INTL" else CLUB_PARAMS)).fit(df), df
 
@@ -38,12 +44,13 @@ def fit_dataset(key: str, refresh: bool = False) -> DixonColes:
     return _fit(key, refresh)[0]
 
 
-def _cached(key: str, refresh: bool = False) -> tuple[float, DixonColes, pd.DataFrame]:
+def _cached(key: str, refresh: bool | str = False) -> tuple[float, DixonColes, pd.DataFrame]:
     key = key.upper()
     with _lock:
         cached = _models.get(key)
-        # EUROPE data updates during the season, so refit periodically.
-        expired = cached and key == "EUROPE" and time.time() - cached[0] > MODEL_TTL_SECONDS
+        # EUROPE and country data update during the season, so refit periodically.
+        seasonal = key == "EUROPE" or key in data_mod.COUNTRIES
+        expired = cached and seasonal and time.time() - cached[0] > MODEL_TTL_SECONDS
         if refresh or cached is None or expired:
             _models[key] = (time.time(), *_fit(key, refresh=refresh))
         return _models[key]

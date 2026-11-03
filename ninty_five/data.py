@@ -36,12 +36,17 @@ FD_EXTRA_URL = "https://www.football-data.co.uk/new/{code}.csv"
 FD_MAIN_LEAGUES = {
     "E0": "England Premier League",
     "E1": "England Championship",
+    "E2": "England League One",
+    "E3": "England League Two",
     "SC0": "Scotland Premiership",
     "D1": "Germany Bundesliga",
     "D2": "Germany 2. Bundesliga",
     "I1": "Italy Serie A",
+    "I2": "Italy Serie B",
     "SP1": "Spain La Liga",
+    "SP2": "Spain Segunda Division",
     "F1": "France Ligue 1",
+    "F2": "France Ligue 2",
     "N1": "Netherlands Eredivisie",
     "B1": "Belgium Pro League",
     "P1": "Portugal Primeira Liga",
@@ -66,6 +71,26 @@ FD_EXTRA_LEAGUES = {
     "RUS": "Russia Premier League",
     "IRL": "Ireland Premier Division",
 }
+
+# Country data sets: each country's divisions, labelled as on the board.
+# Promoted and relegated clubs link the divisions (model group strengths).
+COUNTRIES: dict[str, dict[str, str]] = {
+    "ENG": {"E0": "England 1", "E1": "England 2", "E2": "England 3", "E3": "England 4"},
+    "GER": {"D1": "Germany 1", "D2": "Germany 2"},
+    "ESP": {"SP1": "Spain 1", "SP2": "Spain 2"},
+    "ITA": {"I1": "Italy 1", "I2": "Italy 2"},
+    "FRA": {"F1": "France 1", "F2": "France 2"},
+    "DEN": {"DNK": "Denmark 1"},
+}
+COUNTRY_NAMES = {
+    "ENG": "England: Premier League to League Two",
+    "GER": "Germany: Bundesliga + 2. Bundesliga",
+    "ESP": "Spain: La Liga + Segunda Division",
+    "ITA": "Italy: Serie A + Serie B",
+    "FRA": "France: Ligue 1 + Ligue 2",
+    "DEN": "Denmark: Superliga",
+}
+DIVISION_COUNTRY = {code: key for key, divs in COUNTRIES.items() for code in divs}
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -115,13 +140,18 @@ def _season_codes(n_seasons: int, today: pd.Timestamp | None = None) -> list[str
     return [f"{(y % 100):02d}{((y + 1) % 100):02d}" for y in range(start - n_seasons + 1, start + 1)]
 
 
-def load_club_league(code: str, n_seasons: int = 4, refresh: bool = False) -> pd.DataFrame:
+def load_club_league(code: str, n_seasons: int = 4, refresh: bool = False,
+                     refresh_current: bool = False) -> pd.DataFrame:
+    """One league's results. `refresh` re-downloads every file;
+    `refresh_current` only the newest season (for extra leagues, the file)."""
     code = code.upper()
     if code in FD_MAIN_LEAGUES:
         frames = []
-        for season in _season_codes(n_seasons):
+        seasons = _season_codes(n_seasons)
+        for season in seasons:
+            again = refresh or (refresh_current and season == seasons[-1])
             try:
-                raw = _cached(f"{code}_{season}.csv", FD_MAIN_URL.format(season=season, code=code), refresh)
+                raw = _cached(f"{code}_{season}.csv", FD_MAIN_URL.format(season=season, code=code), again)
             except Exception:  # season not published yet
                 continue
             frames.append(pd.read_csv(io.BytesIO(raw), encoding="latin-1", on_bad_lines="skip"))
@@ -139,7 +169,7 @@ def load_club_league(code: str, n_seasons: int = 4, refresh: bool = False) -> pd
         )
         name = FD_MAIN_LEAGUES[code]
     elif code in FD_EXTRA_LEAGUES:
-        raw = _cached(f"{code}.csv", FD_EXTRA_URL.format(code=code), refresh)
+        raw = _cached(f"{code}.csv", FD_EXTRA_URL.format(code=code), refresh or refresh_current)
         df = pd.read_csv(io.BytesIO(raw), encoding="latin-1", on_bad_lines="skip")
         out = pd.DataFrame(
             {
@@ -162,6 +192,24 @@ def load_club_league(code: str, n_seasons: int = 4, refresh: bool = False) -> pd
     out["neutral"] = False
     out["competition"] = name
     return out.sort_values("date").reset_index(drop=True)[COLUMNS]
+
+
+def load_country(key: str, refresh_current: bool = False) -> tuple[pd.DataFrame, dict[str, str]]:
+    """A country data set: its divisions' results (competition = board label)
+    and team -> label of the division it played in most recently (no groups
+    for a single-division country)."""
+    divisions = COUNTRIES[key.upper()]
+    frames = []
+    for code, label in divisions.items():
+        df = load_club_league(code, refresh_current=refresh_current)
+        frames.append(df.assign(competition=label))
+    df = pd.concat(frames, ignore_index=True).sort_values("date", kind="stable").reset_index(drop=True)
+    groups: dict[str, str] = {}
+    if len(divisions) > 1:
+        for r in df.itertuples():
+            groups[r.home] = r.competition
+            groups[r.away] = r.competition
+    return df[COLUMNS], groups
 
 
 def available_datasets() -> dict[str, str]:
