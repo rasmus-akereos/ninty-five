@@ -72,6 +72,12 @@ tr.fold > td { text-align: left; white-space: normal; background: var(--accent-b
 .more { margin-top: 8px; }
 .more[open] .groups { margin-top: 8px; }
 .fold-result { margin-top: 12px; }
+.form { margin-top: 10px; }
+.form h3 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.form-line { display: flex; align-items: center; gap: 4px; margin: 2px 0; flex-wrap: wrap; }
+.form-team { min-width: 180px; }
+.form-badge { display: inline-block; width: 20px; text-align: center; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; cursor: default; }
+.form-badge.W { background: var(--good); } .form-badge.D { background: var(--muted); } .form-badge.L { background: var(--bad); }
 .fold-result p { margin: 4px 0; }
 .fold-result table { background: var(--panel); }
 </style>
@@ -160,18 +166,55 @@ function settings() {
 const boardEdge = () => +$("boardedge").value / 100;
 
 // ------------------------------------------------------------------ board
-async function loadBoard() {
-  $("board-info").textContent = "Fetching fixtures and fitting the model (first run downloads ~3 seasons and can take a few minutes)…";
-  let r;
-  try { r = await api(`/api/fixtures?days=${+$("days").value}&min_edge=${boardEdge()}`); }
-  catch (e) { $("board-info").textContent = e.message; return; }
+const hhmm = iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+let fetchedDays = 0;     // day window of the last refresh
+let refreshing = false;
+
+function setBoard(r, extra = "") {
   board = r.fixtures;
-  const settled = r.auto_settled.length ? ` · auto-settled ${r.auto_settled.length} bet(s)` : "";
-  const warn = (r.warnings || []).length ? ` ⚠ ${r.warnings.join(" · ")}` : "";
-  $("board-info").textContent = `${board.length} matches${settled}. Figures are minimum odds (model only, edge ≥ ${$("boardedge").value}%). Click a match to fold it open.${warn}`;
-  if (settled) loadBets();
-  open = null;
+  if (open && open.fixture) {  // keep the open match (and typed odds) if it's still listed
+    const f = board.find(x => x.key === open.key);
+    if (f) open.fixture = f; else open = null;
+  }
+  const updated = r.fetched_at ? ` · updated ${hhmm(r.fetched_at)}` : "";
+  $("board-info").textContent = `${board.length} matches${updated}${extra}. Figures are minimum odds (model only, edge ≥ ${$("boardedge").value}%). Click a match to fold it open.`;
   renderBoard();
+}
+
+const boardQuery = () => `days=${+$("days").value}&min_edge=${boardEdge()}`;
+
+// The stored board: instant, no fixture sources contacted.
+async function showStored() {
+  let r;
+  try { r = await api(`/api/fixtures?${boardQuery()}`); }
+  catch (e) { $("board-info").textContent = e.message; return null; }
+  setBoard(r);
+  return r;
+}
+
+// Fetch fresh fixtures (and results), store them, then show the stored board.
+async function refreshBoard() {
+  if (refreshing) return;
+  refreshing = true;
+  const first = !board.length;
+  $("board-info").textContent = first
+    ? "Fetching fixtures and fitting the model (the very first run downloads ~3 seasons and can take a few minutes)…"
+    : $("board-info").textContent.replace(/\. Figures.*/, "") + " · refreshing…";
+  try {
+    const r = await api(`/api/fixtures/refresh?${boardQuery()}`, { method: "POST" });
+    fetchedDays = Math.max(fetchedDays, +$("days").value);
+    const settled = r.auto_settled.length ? ` · auto-settled ${r.auto_settled.length} bet(s)` : "";
+    const warn = (r.warnings || []).length ? ` ⚠ ${r.warnings.join(" · ")}` : "";
+    setBoard(r, settled + warn);
+    if (settled) loadBets();
+  } catch (e) { $("board-info").textContent = e.message; }
+  finally { refreshing = false; }
+}
+
+async function initBoard() {
+  const r = await showStored();
+  if (r && r.fetched_at) fetchedDays = +$("days").value;
+  if (!r || r.stale) refreshBoard();
 }
 
 // Champions League and International first, then leagues alphabetically.
@@ -196,8 +239,8 @@ function renderBoard() {
   renderChips();
   const head = `<tr><th>Kick-off</th><th>Competition</th><th>Match</th>${BOARD_COLS.map(m => `<th>${m}</th>`).join("")}</tr>`;
   const add = `<tr class="add${open && open.key === "manual" ? " open" : ""}" data-key="manual"><td colspan="${NCOLS}"><span class="caret">${open && open.key === "manual" ? "▾" : "+"}</span>Add a match that isn't listed</td></tr>`;
-  const rows = board.map((f, i) => [f, i]).filter(([f]) => league === "All" || f.competition === league).map(([f, i]) => {
-    const key = `f${i}`, isOpen = open && open.key === key;
+  const rows = board.filter(f => league === "All" || f.competition === league).map(f => {
+    const key = f.key, isOpen = open && open.key === key;
     const ko = new Date(f.kickoff).toLocaleString([], { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
     const thin = f.rated && Math.min(...f.data_matches) < 10 ? " ⚠" : "";
     const cells = f.rated ? BOARD_COLS.map(m => `<td>${num(f.min_odds[m])}</td>`).join("") : `<td colspan="${BOARD_COLS.length}" class="muted">no rating</td>`;
@@ -205,7 +248,7 @@ function renderBoard() {
       + (isOpen ? foldRow() : "");
   }).join("");
   $("board").innerHTML = head + add + (open && open.key === "manual" ? foldRow() : "") +
-    (rows || `<tr><td colspan="${NCOLS}" class="muted">${board.length ? "No matches in this league." : "Click Fetch matches to load upcoming games."}</td></tr>`);
+    (rows || `<tr><td colspan="${NCOLS}" class="muted">${board.length ? "No matches in this league." : "No matches stored yet. Click Fetch matches."}</td></tr>`);
   document.querySelectorAll("#board tr[data-key]").forEach(tr => tr.onclick = () => toggle(tr.dataset.key));
   if (open) wireFold();
 }
@@ -214,10 +257,10 @@ function toggle(key) {
   if (open && open.key === key) { open = null; renderBoard(); return; }
   if (key === "manual") {
     const ds = store.get("manualDataset") || "INTL";
-    open = { key, fixture: null, dataset: ds in datasets ? ds : "INTL", home: "", away: "", neutral: ds === "INTL", odds: {}, result: null };
+    open = { key, fixture: null, dataset: ds in datasets ? ds : "INTL", home: "", away: "", neutral: ds === "INTL", odds: {}, result: null, lastOdds: null };
   } else {
-    const f = board[+key.slice(1)];
-    open = { key, fixture: f, dataset: f.dataset || "EUROPE", home: f.home, away: f.away, neutral: f.neutral, odds: {}, result: null };
+    const f = board.find(x => x.key === key);
+    open = { key, fixture: f, dataset: f.dataset || "EUROPE", home: f.home, away: f.away, neutral: f.neutral, odds: {}, result: null, lastOdds: null };
   }
   renderBoard();
   if (key === "manual") { loadTeams(open.dataset); $("f-home").focus(); }
@@ -230,6 +273,18 @@ function oddsGroups(groups) {
     <div class="odds-group"><h3>${title}</h3><div class="odds-row">
       ${keys.map(k => `<div class="cell"><label>${k}</label><input data-market="${k}" inputmode="decimal" autocomplete="off" value="${esc(open.odds[k] || "")}"><small data-min="${k}">&nbsp;</small></div>`).join("")}
     </div></div>`).join("")}</div>`;
+}
+
+// Last five results per team, most recent first.
+function formBlock(f) {
+  if (!f.form) return "";
+  const line = (team, games) => {
+    if (!games.length) return `<div class="form-line"><span class="form-team">${esc(team)}</span><span class="muted">no recent results</span></div>`;
+    const asOf = f.dataset === "INTL" ? ` <span class="muted">as of ${games[0].date}</span>` : "";
+    return `<div class="form-line"><span class="form-team">${esc(team)}</span>${games.map(g =>
+      `<span class="form-badge ${g.result}" title="${g.date} · ${g.venue === "A" ? `${esc(g.opponent)} v ${esc(team)} ${g.ga}-${g.gf}` : `${esc(team)} v ${esc(g.opponent)} ${g.gf}-${g.ga}`}${g.venue === "N" ? " (neutral)" : ""}">${g.result}</span>`).join("")}${asOf}</div>`;
+  };
+  return `<div class="form"><h3>Form (last five, most recent first)</h3>${line(f.home, f.form.home)}${line(f.away, f.form.away)}</div>`;
 }
 
 function foldRow() {
@@ -245,6 +300,7 @@ function foldRow() {
   return `<tr class="fold"><td colspan="${NCOLS}">${teams}
     ${oddsGroups(MAIN_GROUPS)}
     <details class="more"><summary>More markets (double chance, over/under 1.5 and 3.5)</summary>${oddsGroups(MORE_GROUPS)}</details>
+    ${manual ? "" : formBlock(open.fixture)}
     <div class="fold-result" id="f-result"></div>
   </td></tr>`;
 }
@@ -306,20 +362,22 @@ async function evaluate() {
   try {
     r = await api("/api/evaluate", { method: "POST", body: JSON.stringify({
       dataset: target.dataset, home: target.home, away: target.away, neutral: target.neutral,
-      odds: readOdds(), settings: settings() }) });
+      odds: readOdds(), settings: settings(), match_key: target.fixture ? target.fixture.key : null }) });
   } catch (e) {
     if (seq === evalSeq && open === target) $("f-result").innerHTML = `<div class="note">${esc(e.message)}</div>`;
     return;
   }
   if (seq !== evalSeq || open !== target) return; // a newer request or another match took over
+  // Hints show the previous visit's prices: keep what the first evaluation returned.
+  if (target.lastOdds === null) target.lastOdds = r.last_odds || {};
   target.result = r;
   renderResult(r);
 }
 
 function renderResult(r) {
   document.querySelectorAll("#board [data-min]").forEach(el => {
-    const min = minOdds(el.dataset.min);
-    el.textContent = min ? `min ${num(min)}` : "";
+    const m = el.dataset.min, min = minOdds(m), last = open && open.lastOdds && open.lastOdds[m];
+    el.textContent = (min ? `min ${num(min)}` : "") + (last ? ` · last ${num(last.odds)} at ${hhmm(last.entered_at)}` : "");
   });
   markHits();
   const notes = [];
@@ -367,7 +425,7 @@ async function logBet(s) {
     await api("/api/bets", { method: "POST", body: JSON.stringify({
       dataset: target.dataset, home: target.result.home, away: target.result.away, market: s.market, odds: s.odds,
       stake: parseFloat(stake.replace(",", ".")), p_model: s.p_model, p_blend: s.p_blend, ev: s.ev,
-      ...(f && f.match_id != null ? { match_id: f.match_id, kickoff: f.kickoff } : {}) }) });
+      ...(f ? { match_id: f.match_id, kickoff: f.kickoff, match_key: f.key } : {}) }) });
   } catch (e) { alert(e.message); return; }
   loadBets();
 }
@@ -410,12 +468,15 @@ async function loadBets() {
 }
 
 // ------------------------------------------------------------------ init
-$("loadboard").onclick = loadBoard;
+$("loadboard").onclick = refreshBoard;
 // Settings and the board edge change the numbers in an open match.
 ["bankroll", "alpha", "kelly", "maxstake", "minedge", "boardedge"].forEach(id =>
   $(id).addEventListener("change", () => { if (open) evaluate(); }));
+$("boardedge").addEventListener("change", showStored);  // min odds are derived; no refetch
+$("days").addEventListener("change", () => +$("days").value > fetchedDays ? refreshBoard() : showStored());
 api("/api/datasets").then(ds => { datasets = ds; }).catch(() => {});
 renderBoard();
+initBoard();
 loadBets();
 </script>
 </body>
