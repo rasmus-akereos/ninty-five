@@ -9,9 +9,10 @@ import time
 import pandas as pd
 
 from . import data as data_mod
-from . import fixtures, intl_fixtures
+from . import fixtures, intl_fixtures, league_fixtures
 from .model import CLUB_PARAMS, INTL_PARAMS, DixonColes, markets
 
+LEAGUE_LOOKBACK_DAYS = 31
 BOARD_MARKETS = ["1", "X", "2", "Over 2.5", "Under 2.5", "BTTS Yes", "BTTS No"]
 MODEL_TTL_SECONDS = 6 * 3600
 
@@ -154,22 +155,54 @@ def intl_board(days: int) -> list[dict]:
     return rows
 
 
+def league_board(days: int, now: pd.Timestamp | None = None) -> list[dict]:
+    """Lower-league matches (football-data.co.uk), priced by country models."""
+    rows = []
+    for f in league_fixtures.upcoming(days, now).itertuples():
+        _, model, df = _cached(f.dataset)
+        row = {
+            "key": f.key,
+            "dataset": f.dataset,
+            "match_id": None,
+            "kickoff": f.kickoff.isoformat(),
+            "competition": f.competition,
+            "detail": "",
+            "stage": "",
+            "home": f.home,
+            "away": f.away,
+            "neutral": False,
+            "unmatched": getattr(f, "unmatched", ""),  # fixture names not found in the division
+        }
+        rows.append(_priced(model, df, row))
+    return rows
+
+
+BOARD_SOURCES = (
+    ("Club fixtures", "club_board"),
+    ("National-team fixtures", "intl_board"),
+    ("Lower-league fixtures", "league_board"),
+)
+
+
 def build_board(days: int = 7) -> tuple[list[dict], list[str]]:
-    """Fresh upcoming club and national-team fixtures with model prices and form.
+    """Fresh upcoming fixtures from every source with model prices and form.
 
     Returns (rows, warnings). A source that fails becomes a warning so the
-    other still shows; if both fail, the first error is raised."""
+    others still show; if all fail, the first error is raised."""
     rows: list[dict] = []
     warnings: list[str] = []
     errors: list[Exception] = []
-    for name, build in (("Club fixtures", club_board), ("National-team fixtures", intl_board)):
+    for name, fn in BOARD_SOURCES:
         try:
-            rows += build(days)
+            rows += globals()[fn](days)
         except Exception as exc:
             errors.append(exc)
             warnings.append(f"{name} unavailable: {exc}")
-    if len(errors) == 2:
+    if len(errors) == len(BOARD_SOURCES):
         raise errors[0]
+    for r in rows:
+        if r.get("unmatched"):
+            warnings.append(f"{r['competition']}: unknown team name {r['unmatched']} (match shown unrated)")
     rows.sort(key=lambda r: r["kickoff"])
     return rows, warnings
 
@@ -182,8 +215,13 @@ def board(days: int = 7, min_edge: float = 0.08) -> tuple[list[dict], list[str]]
 
 def update_results(history, bets, now: pd.Timestamp) -> list[int]:
     """Fetch 90-minute results for board matches that have kicked off (last 14
-    days), store them, and settle open bets. Each source is best effort."""
-    pending = history.pending_results(now)
+    days; 31 for lower-league matches, whose results arrive later and are
+    given up after 30 days), store them, and settle open bets. Each source is
+    best effort."""
+    all_pending = history.pending_results(now, lookback_days=LEAGUE_LOOKBACK_DAYS)
+    recent = now - pd.Timedelta(days=14)
+    pending = [p for p in all_pending
+               if not p["key"].startswith("fdcu:") and pd.Timestamp(p["kickoff"]) >= recent]
     found: dict[str, tuple[int, int]] = {}
     settled: list[int] = []
 
@@ -214,6 +252,22 @@ def update_results(history, bets, now: pd.Timestamp) -> list[int]:
                     history.set_result(p["key"], *found[p["key"]], r.status)
         except Exception as exc:
             log.warning("national-team results unavailable: %s", exc)
+
+    lower = [p for p in all_pending if p["key"].startswith("fdcu:")]
+    for division in sorted({p["key"].split(":")[1] for p in lower}):
+        try:
+            res = league_fixtures.results(division)
+        except Exception as exc:
+            log.warning("%s results unavailable: %s", division, exc)
+            continue
+        for p in (p for p in lower if p["key"].split(":")[1] == division):
+            m = history.match(p["key"])
+            got = league_fixtures.match_result(res, m["home"], m["away"], pd.Timestamp(p["kickoff"]))
+            if got is not None:
+                found[p["key"]] = got
+                history.set_result(p["key"], *got, "FINISHED")
+            elif now - pd.Timestamp(p["kickoff"]) > league_fixtures.RESULT_WINDOW:
+                history.set_result(p["key"], None, None, "NO_RESULT")
 
     settled += bets.auto_settle_keys(found)
     return sorted(set(settled))

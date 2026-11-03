@@ -17,7 +17,7 @@ from .store import DB_PATH
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS matches (
-    key TEXT PRIMARY KEY,          -- fd:<football-data id> | espn:<ESPN event id>
+    key TEXT PRIMARY KEY,          -- fd:<football-data id> | espn:<ESPN event id> | fdcu:<div>:<date>:<home>:<away>
     dataset TEXT NOT NULL,
     match_id INTEGER,              -- football-data id (club matches only)
     competition TEXT NOT NULL,
@@ -219,6 +219,11 @@ class HistoryStore:
             ).fetchall()
         out = [dict(r) for r in rows if start <= pd.Timestamp(r["kickoff"]) < now]
         return sorted(out, key=lambda r: pd.Timestamp(r["kickoff"]))
+
+    def match(self, key: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM matches WHERE key = ?", (key,)).fetchone()
+        return dict(row) if row else None
 
     def set_result(self, key: str, hg: int | None, ag: int | None, status: str) -> None:
         with self._conn() as c:

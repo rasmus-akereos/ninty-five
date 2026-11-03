@@ -6,8 +6,10 @@ before each round, holding only the next few days' matches:
 * fixtures.csv            main-league format: Div, Date, Time, HomeTeam, AwayTeam, ...
 * new_league_fixtures.csv extra-league format: Country, League, Date, Time, Home, Away, ...
 
-Results come from the same season files the country models train on, so team
-names match the models with no mapping. Times are UK local time.
+Results come from the same season files the country models train on. The
+fixtures files mostly use the same team names, but not always ("Oxford Utd"
+vs "Oxford", "Sheffield Utd" vs "Sheffield United"), so each fixture name is
+resolved against the division's current teams. Times are UK local time.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import pandas as pd
 
 from . import data
 from .data import _fetch
+from .import_odds import _tokens, same_team
 
 FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"
 NEW_FIXTURES_URL = "https://www.football-data.co.uk/new_league_fixtures.csv"
@@ -34,6 +37,10 @@ NEW_DIVISIONS = {
     "DNK": "Denmark 1",
 }
 EXTRA_LEAGUES = {("Denmark", "Superliga"): "DNK"}  # (Country, League) in the extra format
+
+# (division, fixtures-file name) -> results-file name, for names the matcher
+# can't resolve. Extend when the board warns about an unknown team name.
+ALIASES: dict[tuple[str, str], str] = {}
 
 UK = "Europe/London"
 CACHE_SECONDS = 3600
@@ -88,6 +95,55 @@ def parse_extra(raw: bytes) -> pd.DataFrame:
     return _frame(df["_div"], df, "Home", "Away")
 
 
+def _norm(name: str) -> str:
+    return " ".join("united" if t == "utd" else t for t in _tokens(name))
+
+
+def resolve_name(name: str, division: str, teams) -> str | None:
+    """The division's team (results-file spelling) a fixtures-file name means:
+    the alias table, the exact name, or a single lenient match in either
+    direction. None when no team or more than one fits."""
+    teams = list(teams)
+    if (division, name) in ALIASES:
+        return ALIASES[(division, name)]
+    if name in teams:
+        return name
+    n = _norm(name)
+    hits = {t for t in teams if n == _norm(t) or same_team(n, _norm(t)) or same_team(_norm(t), n)}
+    return hits.pop() if len(hits) == 1 else None
+
+
+def _division_teams_live(division: str) -> list[str]:
+    res = results(division)
+    return sorted(set(res["home"]) | set(res["away"]))
+
+
+def _division_teams(division: str) -> list[str] | None:
+    """The division's current-season teams, or None if unavailable (then
+    fixture names are used as they are)."""
+    try:
+        return _division_teams_live(division)
+    except Exception:
+        return None
+
+
+def _resolve(df: pd.DataFrame) -> pd.DataFrame:
+    homes, aways, unmatched = [], [], []
+    teams = {d: _division_teams(d) for d in df["division"].unique()}
+    for r in df.itertuples():
+        names, missing = [], []
+        for n in (r.home, r.away):
+            t = teams[r.division]
+            got = n if t is None else resolve_name(n, r.division, t)
+            names.append(got or n)
+            if got is None:
+                missing.append(n)
+        homes.append(names[0])
+        aways.append(names[1])
+        unmatched.append(", ".join(missing))
+    return df.assign(home=homes, away=aways, unmatched=unmatched)
+
+
 def match_key(division: str, kickoff_utc: pd.Timestamp, home: str, away: str) -> str:
     """fdcu:<division>:<UK kick-off date>:<home>:<away> (the files carry no id)."""
     day = pd.Timestamp(kickoff_utc).tz_convert(UK).strftime("%Y-%m-%d")
@@ -104,7 +160,8 @@ def upcoming(days: int, now: pd.Timestamp | None = None) -> pd.DataFrame:
     """New-league matches with now <= kick-off < start of today + days."""
     now = now or pd.Timestamp.now(tz="UTC")
     df = _all_fixtures()
-    df = df[(df["kickoff"] >= now) & (df["kickoff"] < now.normalize() + pd.Timedelta(days=days))].copy()
+    df = df[(df["kickoff"] >= now) & (df["kickoff"] < now.normalize() + pd.Timedelta(days=days))]
+    df = _resolve(df.reset_index(drop=True)) if len(df) else df.assign(unmatched=[])
     df["key"] = [match_key(r.division, r.kickoff, r.home, r.away) for r in df.itertuples()]
     df["dataset"] = df["division"].map(data.DIVISION_COUNTRY)
     df["competition"] = df["division"].map(NEW_DIVISIONS)

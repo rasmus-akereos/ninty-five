@@ -92,3 +92,41 @@ def test_results_uses_current_season_refresh(monkeypatch):
     assert seen == {"code": "E2", "n_seasons": 1, "refresh_current": True} and len(df) == 1
     league_fixtures.results("E2")  # cached: no second download
     assert seen["code"] == "E2"
+
+
+ENG3 = ["Oxford", "Reading", "Sheffield Weds", "Wigan", "Mansfield"]
+ENG2 = ["Sheffield United", "Sheffield Weds", "Stoke"]
+
+
+def test_resolve_name_exact_and_short_forms():
+    assert league_fixtures.resolve_name("Wigan", "E2", ENG3) == "Wigan"
+    assert league_fixtures.resolve_name("Oxford Utd", "E2", ENG3) == "Oxford"
+    assert league_fixtures.resolve_name("Sheffield Utd", "E1", ENG2) == "Sheffield United"
+    assert league_fixtures.resolve_name("KV Mechelen", "B1", ["Mechelen", "Genk"]) == "Mechelen"
+
+
+def test_resolve_name_ambiguous_or_unknown_is_none():
+    assert league_fixtures.resolve_name("Sheffield", "E1", ENG2) is None  # United or Weds
+    assert league_fixtures.resolve_name("Newcomers FC", "E2", ENG3) is None
+
+
+def test_resolve_name_alias_table(monkeypatch):
+    monkeypatch.setitem(league_fixtures.ALIASES, ("E2", "Peterborough United"), "Peterboro")
+    assert league_fixtures.resolve_name("Peterborough United", "E2", ["Peterboro", "Reading"]) == "Peterboro"
+
+
+def test_upcoming_resolves_names_and_flags_unknown(monkeypatch):
+    main = b"Div,Date,Time,HomeTeam,AwayTeam\nE2,04/11/2026,19:45,Oxford Utd,Reading\nE2,04/11/2026,19:45,Newcomers FC,Wigan\n"
+    monkeypatch.setattr(league_fixtures, "_fetch", lambda url: main if url == league_fixtures.FIXTURES_URL
+                        else b"Country,League,Date,Time,Home,Away\n")
+    monkeypatch.setattr(league_fixtures, "_division_teams", lambda div: ENG3)
+    df = league_fixtures.upcoming(7, now=pd.Timestamp("2026-11-03 12:00", tz="UTC"))
+    ox = df[df.away == "Reading"].iloc[0]
+    assert ox.home == "Oxford" and ox.key == "fdcu:E2:2026-11-04:Oxford:Reading" and ox.unmatched == ""
+    nc = df[df.away == "Wigan"].iloc[0]
+    assert nc.home == "Newcomers FC" and nc.unmatched == "Newcomers FC"
+
+
+def test_division_teams_from_current_results(monkeypatch):
+    monkeypatch.setattr(league_fixtures, "results", lambda div: pd.DataFrame({"home": ["A", "B"], "away": ["C", "A"]}))
+    assert sorted(league_fixtures._division_teams_live("E2")) == ["A", "B", "C"]
