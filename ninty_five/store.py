@@ -117,12 +117,15 @@ class BetStore:
         pnl = sum(b["pnl"] for b in settled)
         expected = sum(b["stake"] * b["ev"] for b in settled if b["ev"] is not None)
         clv = [b["odds"] / b["closing_odds"] - 1 for b in bets if b["closing_odds"]]
+        open_ = [b for b in bets if b["status"] == "open"]
         return {
             "n_bets": len(bets),
             "n_open": sum(b["status"] == "open" for b in bets),
             "n_settled": len(settled),
             "n_won": sum(b["status"] == "won" for b in settled),
-            "staked": round(staked, 2),
+            "staked": round(staked, 2),  # settled only: the base for ROI
+            "open_staked": round(sum(b["stake"] for b in open_), 2),
+            "open_expected_pnl": round(sum(b["stake"] * b["ev"] for b in open_ if b["ev"] is not None), 2),
             "pnl": round(pnl, 2),
             "roi": round(pnl / staked, 4) if staked else None,
             "expected_pnl": round(expected, 2),

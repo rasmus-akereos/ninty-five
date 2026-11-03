@@ -392,9 +392,11 @@ async function del(id) {
 async function loadBets() {
   const { bets, summary: s } = await api("/api/bets");
   $("kpis").innerHTML = [
-    ["Bets", `${s.n_bets} (${s.n_open} open)`], ["Staked", num(s.staked, 0) + " kr"],
+    ["Bets", `${s.n_bets} (${s.n_open} open)`],
+    ["Staked", `${num(s.staked + s.open_staked, 0)} kr <small class="muted">(${num(s.open_staked, 0)} open)</small>`],
     ["P/L", `<span class="${s.pnl >= 0 ? "pos" : "neg"}">${num(s.pnl, 0)} kr</span>`],
-    ["ROI", pct(s.roi)], ["Expected P/L", num(s.expected_pnl, 0) + " kr"],
+    ["ROI", pct(s.roi)], ["Expected P/L (settled)", num(s.expected_pnl, 0) + " kr"],
+    ["Expected P/L (open)", num(s.open_expected_pnl, 0) + " kr"],
     ["Avg CLV", s.avg_clv == null ? "–" : `${pct(s.avg_clv)} (n=${s.n_clv})`],
   ].map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join("");
   $("bets").innerHTML = bets.length ? `<tr><th>Match</th><th>Selection</th><th>Odds</th><th>Stake</th><th>EV</th><th>Close</th><th>Result</th><th>P/L</th><th></th></tr>` +

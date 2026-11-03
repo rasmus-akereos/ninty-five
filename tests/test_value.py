@@ -33,7 +33,10 @@ def test_evaluate_blend_ev_and_stake():
 def test_store_roundtrip(tmp_path):
     st = BetStore(tmp_path / "b.sqlite")
     bid = st.add({"dataset": "INTL", "home": "A", "away": "B", "market": "Over 2.5", "odds": 2.0, "stake": 10, "ev": 0.05})
+    assert st.summary()["open_staked"] == 10  # open bets count before they settle
+    assert st.summary()["open_expected_pnl"] == pytest.approx(0.5)
     st.settle(bid, 2, 1, closing_odds=1.8)
     s = st.summary()
+    assert s["staked"] == 10 and s["open_staked"] == 0
     assert s["pnl"] == pytest.approx(10)
     assert s["avg_clv"] == pytest.approx(2.0 / 1.8 - 1, abs=1e-4)
