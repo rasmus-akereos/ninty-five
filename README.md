@@ -36,9 +36,12 @@ or register for a free key at https://www.football-data.org/client/register
 (see `.env.example`). Then click **Fetch matches**. The board lists upcoming
 Champions League, Premier League, Championship, Bundesliga, La Liga, Serie A,
 Ligue 1, Eredivisie and Primeira Liga games with the **minimum odds** worth
-betting at, so you only have to check Danske Spil's prices. Click a match to
-load it into the form and type the real odds. Bets logged from the board
-**settle automatically** once the result is in (90-minute score).
+betting at, so you only have to check Danske Spil's prices. Filter by league
+with the buttons above the list. Click a match to **fold it open** right under
+its row and type the real odds: each box shows its minimum odds and turns green
+when the price is worth betting, and the edge and stake update as you type.
+Bets logged from the board **settle automatically** once the result is in
+(90-minute score).
 
 The first fetch downloads three seasons (~27 requests). The free tier allows
 10 requests a minute, so expect about 3 minutes. After that only the current
@@ -48,7 +51,10 @@ season is refreshed, at most every 6 hours. For a morning list in the terminal:
 ninty-five fixtures --days 3
 ```
 
-### Manual mode
+### Matches not on the list
+
+Click **+ Add a match that isn't listed** at the top of the board. It folds
+open the same way, with team pickers:
 
 1. Pick a data set: **International** (every national team worldwide, so
    World Cup, Euros, qualifiers and Nations League) or a club league.
@@ -56,7 +62,7 @@ ninty-five fixtures --days 3
 3. Copy the odds from Danske Spil. Commas (`2,15`) are fine. Enter **every
    outcome** of a market (all of 1/X/2, both Over and Under) so the
    bookmaker's margin can be removed.
-4. Green rows clear your minimum edge. *Log bet* stores them.
+4. Green boxes and rows clear your minimum edge. *Log bet* stores them.
 5. After the match, *Settle* with the final score. Add the **closing odds**
    (the last price before kick-off) whenever you can.
 

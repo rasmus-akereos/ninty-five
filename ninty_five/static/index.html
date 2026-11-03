@@ -7,11 +7,11 @@
 <style>
 :root {
   --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5f6b7a; --border: #dde2e8;
-  --accent: #1f6feb; --good: #1a7f37; --good-bg: #e6f4ea; --bad: #b42318; --warn-bg: #fff6e0;
+  --accent: #1f6feb; --accent-bg: #eaf1fd; --good: #1a7f37; --good-bg: #e6f4ea; --bad: #b42318; --warn-bg: #fff6e0;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #0f1216; --panel: #171b21; --text: #e6e9ed; --muted: #9aa5b1; --border: #2a313a;
-          --accent: #4c8dff; --good: #4ac26b; --good-bg: #13261a; --bad: #ff6b5e; --warn-bg: #2a2410; }
+          --accent: #4c8dff; --accent-bg: #16233a; --good: #4ac26b; --good-bg: #13261a; --bad: #ff6b5e; --warn-bg: #2a2410; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
@@ -19,7 +19,7 @@ header { padding: 16px; border-bottom: 1px solid var(--border); background: var(
 header h1 { margin: 0; font-size: 18px; }
 header p { margin: 4px 0 0; color: var(--muted); }
 main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
-section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; min-width: 0; }
 h2 { margin: 0 0 12px; font-size: 15px; }
 label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
 input, select, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; width: 100%; }
@@ -27,9 +27,6 @@ button { background: var(--accent); color: #fff; border: none; cursor: pointer; 
 button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); }
 button.small { padding: 4px 8px; font-size: 12px; }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-.odds-group { border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
-.odds-group h3 { margin: 0 0 8px; font-size: 12px; color: var(--muted); font-weight: 600; }
-.odds-row { display: grid; grid-template-columns: repeat(var(--n), 1fr); gap: 6px; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 .check { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
 .check input { width: auto; }
@@ -38,9 +35,6 @@ th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--bor
 th:first-child, td:first-child { text-align: left; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
 tr.rec td { background: var(--good-bg); }
-#board tr[data-i] { cursor: pointer; }
-#board th:nth-child(-n+3), #board td:nth-child(-n+3) { text-align: left; }
-#board tr[data-i]:hover td { background: var(--bg); }
 .pos { color: var(--good); } .neg { color: var(--bad); }
 .scroll { overflow-x: auto; }
 .note { background: var(--warn-bg); padding: 8px 10px; border-radius: 6px; margin: 8px 0; font-size: 13px; }
@@ -50,40 +44,51 @@ tr.rec td { background: var(--good-bg); }
 .kpi span { color: var(--muted); font-size: 12px; }
 .muted { color: var(--muted); }
 details summary { cursor: pointer; color: var(--muted); }
+
+/* board */
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 8px; }
+.chip { background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+.chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip .n { opacity: .65; margin-left: 4px; font-size: 11px; }
+#board th:nth-child(-n+3), #board td:nth-child(-n+3) { text-align: left; }
+#board tr.match, #board tr.add { cursor: pointer; }
+#board tr.match:hover > td, #board tr.add:hover > td { background: var(--bg); }
+#board tr.open > td { background: var(--accent-bg); font-weight: 600; }
+#board tr.add td { color: var(--accent); }
+.caret { display: inline-block; width: 1em; color: var(--muted); }
+tr.fold > td { text-align: left; white-space: normal; background: var(--accent-bg); border-left: 3px solid var(--accent); padding: 12px; }
+
+/* fold-down contents */
+.fold-teams { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 12px; }
+.groups { display: flex; flex-wrap: wrap; gap: 8px; }
+.odds-group { border: 1px solid var(--border); border-radius: 6px; padding: 8px; background: var(--panel); }
+.odds-group h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.odds-row { display: flex; gap: 6px; }
+.cell { width: 74px; }
+.cell label { margin-bottom: 2px; }
+.cell input { padding: 5px 6px; }
+.cell input.hit { border-color: var(--good); background: var(--good-bg); }
+.cell small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.more { margin-top: 8px; }
+.more[open] .groups { margin-top: 8px; }
+.fold-result { margin-top: 12px; }
+.fold-result p { margin: 4px 0; }
+.fold-result table { background: var(--panel); }
 </style>
 </head>
 <body>
 <header>
   <h1>ninty-five</h1>
-  <p>Dixon-Coles match model vs. your bookmaker's odds. Enter the prices you see, get fair odds, edge and stake.</p>
+  <p>Dixon-Coles match model vs. your bookmaker's odds. Open a match, type the prices you see, get edge and stake.</p>
 </header>
 <main>
   <section>
-    <h2>Upcoming matches (Champions League + top leagues)</h2>
+    <h2>Matches</h2>
     <div class="row" style="margin-top:0">
-      <div style="width:120px"><label>Next days</label><input id="days" type="number" value="7" min="1" max="30"></div>
+      <div style="width:110px"><label>Next days</label><input id="days" type="number" value="7" min="1" max="30"></div>
       <div style="width:150px"><label>Min edge for list (%)</label><input id="boardedge" type="number" value="8" step="1"></div>
       <div style="align-self:end"><button id="loadboard">Fetch matches</button></div>
     </div>
-    <p class="muted" id="board-info">Shows the minimum Danske Spil odds worth betting at, so you only check prices. Click a match to enter its odds.</p>
-    <div class="scroll"><table id="board"></table></div>
-  </section>
-
-  <section>
-    <h2>1. Match</h2>
-    <div class="grid">
-      <div><label>Data set</label><select id="dataset"></select></div>
-      <div><label>Home / team 1</label><input id="home" list="teams" autocomplete="off"></div>
-      <div><label>Away / team 2</label><input id="away" list="teams" autocomplete="off"></div>
-      <div style="align-self:end"><label class="check"><input type="checkbox" id="neutral"> Neutral venue</label></div>
-    </div>
-    <datalist id="teams"></datalist>
-    <p class="muted" id="model-info"></p>
-  </section>
-
-  <section>
-    <h2>2. Odds (decimal, as shown on Danske Spil)</h2>
-    <div class="grid" id="odds" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))"></div>
     <details style="margin-top:12px">
       <summary>Settings</summary>
       <div class="grid" style="margin-top:8px">
@@ -91,25 +96,12 @@ details summary { cursor: pointer; color: var(--muted); }
         <div><label>Model weight α (0 = market, 1 = model)</label><input id="alpha" type="number" step="0.05" value="0.5"></div>
         <div><label>Kelly fraction</label><input id="kelly" type="number" step="0.05" value="0.25"></div>
         <div><label>Max stake (% bankroll)</label><input id="maxstake" type="number" step="0.5" value="3"></div>
-        <div><label>Min edge (EV %)</label><input id="minedge" type="number" step="0.5" value="3"></div>
+        <div><label>Min edge to bet (EV %)</label><input id="minedge" type="number" step="0.5" value="3"></div>
       </div>
     </details>
-    <div class="row">
-      <button id="go">Evaluate</button>
-      <button class="secondary" id="clear">Clear odds</button>
-    </div>
-  </section>
-
-  <section id="result" hidden>
-    <h2>3. Result</h2>
-    <div id="summary"></div>
-    <div class="scroll"><table id="sel"></table></div>
-    <details style="margin-top:12px"><summary>All model probabilities &amp; likely scores</summary>
-      <div class="grid" style="margin-top:8px">
-        <div class="scroll"><table id="probs"></table></div>
-        <div class="scroll"><table id="scores"></table></div>
-      </div>
-    </details>
+    <div class="chips" id="chips"></div>
+    <p class="muted" id="board-info">Figures are the minimum Danske Spil odds worth betting at. Click a match to fold it open and type the real odds.</p>
+    <div class="scroll"><table id="board"></table></div>
   </section>
 
   <section>
@@ -118,23 +110,39 @@ details summary { cursor: pointer; color: var(--muted); }
     <div class="scroll"><table id="bets"></table></div>
   </section>
 </main>
+<datalist id="teams"></datalist>
 
 <script>
-const GROUPS = [
+const MAIN_GROUPS = [
   ["1X2", ["1", "X", "2"]],
-  ["Double chance", ["1X", "12", "X2"]],
-  ["Over/Under 1.5", ["Over 1.5", "Under 1.5"]],
   ["Over/Under 2.5", ["Over 2.5", "Under 2.5"]],
-  ["Over/Under 3.5", ["Over 3.5", "Under 3.5"]],
   ["Both teams score", ["BTTS Yes", "BTTS No"]],
 ];
+const MORE_GROUPS = [
+  ["Double chance", ["1X", "12", "X2"]],
+  ["Over/Under 1.5", ["Over 1.5", "Under 1.5"]],
+  ["Over/Under 3.5", ["Over 3.5", "Under 3.5"]],
+];
+const BOARD_COLS = ["1", "X", "2", "Over 2.5", "Under 2.5", "BTTS Yes"];
+const NCOLS = 3 + BOARD_COLS.length;
+
 const $ = id => document.getElementById(id);
 const pct = (x, d = 1) => x == null ? "–" : (100 * x).toFixed(d) + "%";
 const num = (x, d = 2) => x == null ? "–" : Number(x).toFixed(d);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let last = null;
+const parseOdds = s => { const v = parseFloat(String(s).replace(",", ".")); return v > 1 ? v : null; };
+const store = {
+  get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+};
+
 let board = [];
-let fixture = null; // the board row currently loaded into the form, if any
+let datasets = {};
+let league = store.get("league") || "All";
+// The match currently folded open: { key, fixture|null, dataset, home, away, neutral, result }
+let open = null;
+let evalSeq = 0;
+let teamSet = new Set(); // teams of the data set loaded into the manual picker
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -143,121 +151,220 @@ async function api(path, opts = {}) {
   return body;
 }
 
-function buildOdds() {
-  $("odds").innerHTML = GROUPS.map(([title, keys]) => `
-    <div class="odds-group"><h3>${title}</h3>
-      <div class="odds-row" style="--n:${keys.length}">
-        ${keys.map(k => `<div><label>${k}</label><input data-market="${k}" inputmode="decimal"></div>`).join("")}
-      </div></div>`).join("");
-}
-
-async function loadDatasets() {
-  const ds = await api("/api/datasets");
-  $("dataset").innerHTML = Object.entries(ds).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
-  $("dataset").value = "INTL";
-  $("dataset").onchange = () => { fixture = null; loadTeams(); };
-  await loadTeams();
-}
-
-async function loadTeams() {
-  $("model-info").textContent = "Fitting model…";
-  try {
-    const t = await api(`/api/teams?dataset=${$("dataset").value}`);
-    $("teams").innerHTML = t.teams.map(x => `<option value="${esc(x)}">`).join("");
-    $("model-info").textContent = `${t.teams.length} teams · results up to ${t.as_of}`;
-    if (!fixture) $("neutral").checked = $("dataset").value === "INTL";
-  } catch (e) { $("model-info").textContent = e.message; }
-}
-
-function readOdds() {
-  const odds = {};
-  document.querySelectorAll("[data-market]").forEach(el => {
-    const v = parseFloat(el.value.replace(",", "."));
-    if (v > 1) odds[el.dataset.market] = v;
-  });
-  return odds;
-}
-
 function settings() {
   return {
     bankroll: +$("bankroll").value, alpha: +$("alpha").value, kelly_fraction: +$("kelly").value,
     max_stake_pct: +$("maxstake").value / 100, min_edge: +$("minedge").value / 100,
   };
 }
+const boardEdge = () => +$("boardedge").value / 100;
 
-async function evaluate() {
-  try {
-    last = await api("/api/evaluate", { method: "POST", body: JSON.stringify({
-      dataset: $("dataset").value, home: $("home").value.trim(), away: $("away").value.trim(),
-      neutral: $("neutral").checked, odds: readOdds(), settings: settings() }) });
-  } catch (e) { alert(e.message); return; }
-  render(last);
+// ------------------------------------------------------------------ board
+async function loadBoard() {
+  $("board-info").textContent = "Fetching fixtures and fitting the model (first run downloads ~3 seasons and can take a few minutes)…";
+  let r;
+  try { r = await api(`/api/fixtures?days=${+$("days").value}&min_edge=${boardEdge()}`); }
+  catch (e) { $("board-info").textContent = e.message; return; }
+  board = r.fixtures;
+  const settled = r.auto_settled.length ? ` · auto-settled ${r.auto_settled.length} bet(s)` : "";
+  $("board-info").textContent = `${board.length} matches${settled}. Figures are minimum odds (model only, edge ≥ ${$("boardedge").value}%). Click a match to fold it open.`;
+  if (settled) loadBets();
+  open = null;
+  renderBoard();
 }
 
-function render(r) {
-  $("result").hidden = false;
+function renderChips() {
+  const counts = {};
+  board.forEach(f => counts[f.competition] = (counts[f.competition] || 0) + 1);
+  if (league !== "All" && !counts[league]) league = "All";
+  const names = ["All", ...Object.keys(counts).sort((a, b) =>
+    (a === "Champions League" ? -1 : b === "Champions League" ? 1 : a.localeCompare(b)))];
+  $("chips").innerHTML = board.length ? names.map(n =>
+    `<button class="chip${n === league ? " active" : ""}" data-league="${esc(n)}">${esc(n)}<span class="n">${n === "All" ? board.length : counts[n]}</span></button>`).join("") : "";
+  document.querySelectorAll("#chips .chip").forEach(b => b.onclick = () => {
+    league = b.dataset.league; store.set("league", league);
+    if (open && open.fixture && league !== "All" && open.fixture.competition !== league) open = null;
+    renderBoard();
+  });
+}
+
+function renderBoard() {
+  renderChips();
+  const head = `<tr><th>Kick-off</th><th>Competition</th><th>Match</th>${BOARD_COLS.map(m => `<th>${m}</th>`).join("")}</tr>`;
+  const add = `<tr class="add${open && open.key === "manual" ? " open" : ""}" data-key="manual"><td colspan="${NCOLS}"><span class="caret">${open && open.key === "manual" ? "▾" : "+"}</span>Add a match that isn't listed</td></tr>`;
+  const rows = board.map((f, i) => [f, i]).filter(([f]) => league === "All" || f.competition === league).map(([f, i]) => {
+    const key = `f${i}`, isOpen = open && open.key === key;
+    const ko = new Date(f.kickoff).toLocaleString([], { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+    const thin = f.rated && Math.min(...f.data_matches) < 10 ? " ⚠" : "";
+    const cells = f.rated ? BOARD_COLS.map(m => `<td>${num(f.min_odds[m])}</td>`).join("") : `<td colspan="${BOARD_COLS.length}" class="muted">no rating</td>`;
+    return `<tr class="match${isOpen ? " open" : ""}" data-key="${key}"><td>${ko}</td><td>${esc(f.competition)}</td><td><span class="caret">${isOpen ? "▾" : "▸"}</span>${esc(f.home)} – ${esc(f.away)}${thin}</td>${cells}</tr>`
+      + (isOpen ? foldRow() : "");
+  }).join("");
+  $("board").innerHTML = head + add + (open && open.key === "manual" ? foldRow() : "") +
+    (rows || `<tr><td colspan="${NCOLS}" class="muted">${board.length ? "No matches in this league." : "Click Fetch matches to load upcoming games."}</td></tr>`);
+  document.querySelectorAll("#board tr[data-key]").forEach(tr => tr.onclick = () => toggle(tr.dataset.key));
+  if (open) wireFold();
+}
+
+function toggle(key) {
+  if (open && open.key === key) { open = null; renderBoard(); return; }
+  if (key === "manual") {
+    const ds = store.get("manualDataset") || "INTL";
+    open = { key, fixture: null, dataset: ds in datasets ? ds : "INTL", home: "", away: "", neutral: ds === "INTL", odds: {}, result: null };
+  } else {
+    const f = board[+key.slice(1)];
+    open = { key, fixture: f, dataset: f.dataset || "EUROPE", home: f.home, away: f.away, neutral: f.neutral, odds: {}, result: null };
+  }
+  renderBoard();
+  if (key === "manual") { loadTeams(open.dataset); $("f-home").focus(); }
+  else { evaluate(); document.querySelector('#board [data-market="1"]')?.focus(); }
+}
+
+// ------------------------------------------------------------- fold-down
+function oddsGroups(groups) {
+  return `<div class="groups">${groups.map(([title, keys]) => `
+    <div class="odds-group"><h3>${title}</h3><div class="odds-row">
+      ${keys.map(k => `<div class="cell"><label>${k}</label><input data-market="${k}" inputmode="decimal" autocomplete="off" value="${esc(open.odds[k] || "")}"><small data-min="${k}">&nbsp;</small></div>`).join("")}
+    </div></div>`).join("")}</div>`;
+}
+
+function foldRow() {
+  const manual = !open.fixture;
+  const teams = manual ? `
+    <div class="fold-teams">
+      <div><label>Data set</label><select id="f-dataset">${Object.entries(datasets).map(([k, v]) =>
+        `<option value="${k}"${k === open.dataset ? " selected" : ""}>${esc(v)}</option>`).join("")}</select></div>
+      <div><label>Home / team 1</label><input id="f-home" list="teams" autocomplete="off" value="${esc(open.home)}"></div>
+      <div><label>Away / team 2</label><input id="f-away" list="teams" autocomplete="off" value="${esc(open.away)}"></div>
+      <div style="align-self:end"><label class="check"><input type="checkbox" id="f-neutral"${open.neutral ? " checked" : ""}> Neutral venue</label></div>
+    </div><p class="muted" id="f-info" style="margin-top:-4px"></p>` : "";
+  return `<tr class="fold"><td colspan="${NCOLS}">${teams}
+    ${oddsGroups(MAIN_GROUPS)}
+    <details class="more"><summary>More markets (double chance, over/under 1.5 and 3.5)</summary>${oddsGroups(MORE_GROUPS)}</details>
+    <div class="fold-result" id="f-result"></div>
+  </td></tr>`;
+}
+
+function wireFold() {
+  const fold = document.querySelector("#board tr.fold");
+  let t;
+  fold.querySelectorAll("[data-market]").forEach(el => el.addEventListener("input", () => {
+    open.odds[el.dataset.market] = el.value; markHits(); clearTimeout(t); t = setTimeout(evaluate, 300);
+  }));
+  if (!open.fixture) {
+    $("f-dataset").onchange = e => {
+      open.dataset = e.target.value; store.set("manualDataset", open.dataset);
+      open.neutral = $("f-neutral").checked = open.dataset === "INTL";
+      loadTeams(open.dataset); evaluate();
+    };
+    ["f-home", "f-away"].forEach(id => $(id).addEventListener("input", () => {
+      open.home = $("f-home").value.trim(); open.away = $("f-away").value.trim();
+      clearTimeout(t); t = setTimeout(evaluate, 300);
+    }));
+    $("f-neutral").onchange = e => { open.neutral = e.target.checked; evaluate(); };
+  }
+  if (open.result) renderResult(open.result);
+}
+
+function readOdds() {
+  const odds = {};
+  document.querySelectorAll("#board [data-market]").forEach(el => {
+    const v = parseOdds(el.value);
+    if (v) odds[el.dataset.market] = v;
+  });
+  return odds;
+}
+
+function minOdds(market) {
+  const p = open && open.result && open.result.probabilities[market];
+  return p ? (1 + boardEdge()) / p : null;
+}
+
+// Green = worth betting. Once the app has evaluated this exact price, trust its
+// verdict (it blends in the market once every outcome is entered); until then,
+// compare with the model-only minimum.
+function markHits() {
+  const sel = {};
+  (open && open.result ? open.result.selections : []).forEach(s => sel[s.market] = s);
+  document.querySelectorAll("#board [data-market]").forEach(el => {
+    const m = el.dataset.market, v = parseOdds(el.value), min = minOdds(m), s = sel[m];
+    const hit = v == null ? false : s && Math.abs(s.odds - v) < 1e-9 ? s.recommended : min != null && v >= min;
+    el.classList.toggle("hit", hit);
+  });
+}
+
+async function evaluate() {
+  if (!open || !open.home || !open.away) { if (open) $("f-result").innerHTML = ""; return; }
+  // Manual entry: wait until both names are real teams, so half-typed names don't error.
+  if (!open.fixture && !(teamSet.has(open.home) && teamSet.has(open.away))) { $("f-result").innerHTML = ""; return; }
+  const seq = ++evalSeq, target = open;
+  let r;
+  try {
+    r = await api("/api/evaluate", { method: "POST", body: JSON.stringify({
+      dataset: target.dataset, home: target.home, away: target.away, neutral: target.neutral,
+      odds: readOdds(), settings: settings() }) });
+  } catch (e) {
+    if (seq === evalSeq && open === target) $("f-result").innerHTML = `<div class="note">${esc(e.message)}</div>`;
+    return;
+  }
+  if (seq !== evalSeq || open !== target) return; // a newer request or another match took over
+  target.result = r;
+  renderResult(r);
+}
+
+function renderResult(r) {
+  document.querySelectorAll("#board [data-min]").forEach(el => {
+    const min = minOdds(el.dataset.min);
+    el.textContent = min ? `min ${num(min)}` : "";
+  });
+  markHits();
   const notes = [];
   const [nh, na] = r.data_matches;
   if (Math.min(nh, na) < 15) notes.push(`Thin data: ${Math.round(Math.min(nh, na))} recent matches for one side. Treat with caution.`);
   for (const [k, v] of Object.entries(r.margins)) notes.push(`Bookmaker margin ${k}: ${pct(v)}. This is what the model has to beat.`);
   if (r.selections.some(s => s.p_market == null)) notes.push("Rows without a market probability come from an incomplete market (enter every outcome to strip the margin). They use the model only and are less reliable.");
-  $("summary").innerHTML = `
-    <p><b>${esc(r.home)}</b> ${num(r.xg[0])} – ${num(r.xg[1])} <b>${esc(r.away)}</b> <span class="muted">(expected goals)</span></p>
-    <p>1: ${pct(r.probabilities["1"])} · X: ${pct(r.probabilities["X"])} · 2: ${pct(r.probabilities["2"])}</p>
-    ${notes.map(n => `<div class="note">${esc(n)}</div>`).join("")}`;
-
-  if (!r.selections.length) { $("sel").innerHTML = "<tr><td>No odds entered: model prices only.</td></tr>"; }
-  else $("sel").innerHTML = `<tr><th>Selection</th><th>Odds</th><th>Model</th><th>Market (no margin)</th><th>Blend</th><th>Fair odds</th><th>EV</th><th>Stake</th><th></th></tr>` +
-    r.selections.map((s, i) => `<tr class="${s.recommended ? "rec" : ""}">
-      <td>${esc(s.market)}</td><td>${num(s.odds)}</td><td>${pct(s.p_model)}</td><td>${pct(s.p_market)}</td>
-      <td>${pct(s.p_blend)}</td><td>${num(s.fair_odds)}</td>
-      <td class="${s.ev >= 0 ? "pos" : "neg"}">${pct(s.ev)}</td>
-      <td>${s.recommended ? num(s.stake, 0) + " kr" : "–"}</td>
-      <td>${s.recommended ? `<button class="small" onclick="logBet(${i})">Log bet</button>` : ""}</td></tr>`).join("");
-
-  $("probs").innerHTML = `<tr><th>Market</th><th>Prob.</th><th>Fair odds</th></tr>` +
-    Object.entries(r.probabilities).map(([k, v]) => `<tr><td>${k}</td><td>${pct(v)}</td><td>${num(r.fair_odds[k])}</td></tr>`).join("");
-  $("scores").innerHTML = `<tr><th>Score</th><th>Prob.</th></tr>` +
-    r.top_scores.map(s => `<tr><td>${s.score}</td><td>${pct(s.p)}</td></tr>`).join("");
+  const sel = r.selections.length ? `<div class="scroll"><table>
+      <tr><th>Selection</th><th>Odds</th><th>Model</th><th>Market (no margin)</th><th>Blend</th><th>Fair odds</th><th>EV</th><th>Stake</th><th></th></tr>
+      ${r.selections.map((s, i) => `<tr class="${s.recommended ? "rec" : ""}">
+        <td>${esc(s.market)}</td><td>${num(s.odds)}</td><td>${pct(s.p_model)}</td><td>${pct(s.p_market)}</td>
+        <td>${pct(s.p_blend)}</td><td>${num(s.fair_odds)}</td>
+        <td class="${s.ev >= 0 ? "pos" : "neg"}">${pct(s.ev)}</td>
+        <td>${s.recommended ? num(s.stake, 0) + " kr" : "–"}</td>
+        <td>${s.recommended ? `<button class="small" data-log="${i}">Log bet</button>` : ""}</td></tr>`).join("")}
+    </table></div>` : `<p class="muted">Type Danske Spil odds above. A box turns green when the price is worth betting. Enter every outcome of a market for an honest edge.</p>`;
+  $("f-result").innerHTML = `
+    <p><b>${esc(r.home)}</b> ${num(r.xg[0])} – ${num(r.xg[1])} <b>${esc(r.away)}</b> <span class="muted">expected goals ·
+      1 ${pct(r.probabilities["1"])} · X ${pct(r.probabilities["X"])} · 2 ${pct(r.probabilities["2"])} ·
+      likely ${r.top_scores.slice(0, 3).map(s => s.score).join(", ")}</span></p>
+    ${notes.map(n => `<div class="note">${esc(n)}</div>`).join("")}
+    ${sel}`;
+  $("f-result").querySelectorAll("[data-log]").forEach(b => b.onclick = () => logBet(r.selections[+b.dataset.log]));
 }
 
-async function loadBoard() {
-  $("board-info").textContent = "Fetching fixtures and fitting the Europe model (first run downloads ~3 seasons and can take a few minutes)…";
-  let r;
-  try { r = await api(`/api/fixtures?days=${+$("days").value}&min_edge=${+$("boardedge").value / 100}`); }
-  catch (e) { $("board-info").textContent = e.message; return; }
-  board = r.fixtures;
-  const settled = r.auto_settled.length ? ` · auto-settled ${r.auto_settled.length} bet(s)` : "";
-  $("board-info").textContent = `${board.length} matches${settled}. Figures are minimum odds (model only, edge ≥ ${$("boardedge").value}%). Click a row to evaluate with real odds.`;
-  if (settled) loadBets();
-  const M = ["1", "X", "2", "Over 2.5", "Under 2.5", "BTTS Yes"];
-  $("board").innerHTML = board.length ? `<tr><th>Kick-off</th><th>Competition</th><th>Match</th>${M.map(m => `<th>${m}</th>`).join("")}</tr>` +
-    board.map((f, i) => {
-      const ko = new Date(f.kickoff).toLocaleString([], { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-      const thin = f.rated && Math.min(...f.data_matches) < 10 ? " ⚠" : "";
-      const cells = f.rated ? M.map(m => `<td>${num(f.min_odds[m])}</td>`).join("") : `<td colspan="${M.length}" class="muted">no rating</td>`;
-      return `<tr data-i="${i}"><td>${ko}</td><td>${esc(f.competition)}</td><td>${esc(f.home)} – ${esc(f.away)}${thin}</td>${cells}</tr>`;
-    }).join("") : `<tr><td class="muted">No scheduled matches in this window.</td></tr>`;
-  document.querySelectorAll("#board tr[data-i]").forEach(tr => tr.onclick = () => pickFixture(board[+tr.dataset.i]));
+async function loadTeams(ds) {
+  teamSet = new Set();
+  const info = $("f-info");
+  if (info) info.textContent = "Loading teams…";
+  try {
+    const t = await api(`/api/teams?dataset=${ds}`);
+    teamSet = new Set(t.teams);
+    if (open && !open.fixture) evaluate();
+    $("teams").innerHTML = t.teams.map(x => `<option value="${esc(x)}">`).join("");
+    if ($("f-info")) $("f-info").textContent = `${t.teams.length} teams · results up to ${t.as_of}`;
+  } catch (e) { if ($("f-info")) $("f-info").textContent = e.message; }
 }
 
-async function pickFixture(f) {
-  if ($("dataset").value !== "EUROPE") { $("dataset").value = "EUROPE"; await loadTeams(); }
-  $("home").value = f.home; $("away").value = f.away; $("neutral").checked = f.neutral;
-  fixture = f;
-  document.querySelectorAll("[data-market]").forEach(el => el.value = "");
-  $("odds").scrollIntoView({ behavior: "smooth" });
-  document.querySelector('[data-market="1"]').focus();
-}
-
-async function logBet(i) {
-  const s = last.selections[i];
+// --------------------------------------------------------------- bet log
+async function logBet(s) {
+  const target = open, f = target.fixture;
   const stake = prompt(`Stake for ${s.market} @ ${s.odds}`, s.stake);
   if (!stake) return;
-  await api("/api/bets", { method: "POST", body: JSON.stringify({
-    dataset: $("dataset").value, home: last.home, away: last.away, market: s.market, odds: s.odds,
-    stake: parseFloat(stake), p_model: s.p_model, p_blend: s.p_blend, ev: s.ev,
-    ...(fixture && fixture.home === last.home && fixture.away === last.away ? { match_id: fixture.match_id, kickoff: fixture.kickoff } : {}) }) });
+  try {
+    await api("/api/bets", { method: "POST", body: JSON.stringify({
+      dataset: target.dataset, home: target.result.home, away: target.result.away, market: s.market, odds: s.odds,
+      stake: parseFloat(stake.replace(",", ".")), p_model: s.p_model, p_blend: s.p_blend, ev: s.ev,
+      ...(f && f.match_id != null ? { match_id: f.match_id, kickoff: f.kickoff } : {}) }) });
+  } catch (e) { alert(e.message); return; }
   loadBets();
 }
 
@@ -296,12 +403,13 @@ async function loadBets() {
     : `<tr><td class="muted">No bets logged yet.</td></tr>`;
 }
 
-buildOdds();
-$("go").onclick = evaluate;
+// ------------------------------------------------------------------ init
 $("loadboard").onclick = loadBoard;
-["home", "away"].forEach(id => $(id).addEventListener("input", () => { fixture = null; }));
-$("clear").onclick = () => document.querySelectorAll("[data-market]").forEach(el => el.value = "");
-loadDatasets();
+// Settings and the board edge change the numbers in an open match.
+["bankroll", "alpha", "kelly", "maxstake", "minedge", "boardedge"].forEach(id =>
+  $(id).addEventListener("change", () => { if (open) evaluate(); }));
+api("/api/datasets").then(ds => { datasets = ds; }).catch(() => {});
+renderBoard();
 loadBets();
 </script>
 </body>
