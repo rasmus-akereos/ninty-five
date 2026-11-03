@@ -44,6 +44,7 @@ tr.rec td { background: var(--good-bg); }
 .kpi span { color: var(--muted); font-size: 12px; }
 .muted { color: var(--muted); }
 details summary { cursor: pointer; color: var(--muted); }
+h3.sub { margin: 4px 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
 
 /* board */
 .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 8px; }
@@ -118,6 +119,7 @@ tr.fold > td { text-align: left; white-space: normal; background: var(--accent-b
 
   <section>
     <h2>Bet log</h2>
+    <div id="outlook"></div>
     <div class="kpis" id="kpis"></div>
     <div class="scroll"><table id="bets"></table></div>
   </section>
@@ -507,9 +509,22 @@ async function loadBets() {
     ["Expected P/L (open)", num(s.open_expected_pnl, 0) + " kr"],
     ["Avg CLV", s.avg_clv == null ? "–" : `${pct(s.avg_clv)} (n=${s.n_clv})`],
   ].map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join("");
-  $("bets").innerHTML = bets.length ? `<tr><th>Match</th><th>Selection</th><th>Odds</th><th>Stake</th><th>EV</th><th>Close</th><th>Result</th><th>P/L</th><th></th></tr>` +
+  const o = s.outlook;
+  $("outlook").innerHTML = o ? `<h3 class="sub">Open bets</h3>
+    <div class="kpis">
+      <div class="kpi"><span>Staked</span><b>${num(o.staked, 0)} kr</b></div>
+      <div class="kpi"><span>Expected profit</span><b class="${o.expected_pnl >= 0 ? "pos" : "neg"}">${o.expected_pnl >= 0 ? "+" : ""}${num(o.expected_pnl, 0)} kr</b></div>
+      <div class="kpi"><span>Expected return</span><b>${pct(o.expected_return)}</b></div>
+      <div class="kpi"><span>Chance of ending in profit</span><b>${pct(o.p_profit, 0)}</b></div>
+      <div class="kpi"><span>Likely range (8 in 10)</span><b>${num(o.p10, 0)} to +${num(o.p90, 0)} kr</b></div>
+      <div class="kpi"><span>All lose / all win</span><b>${num(o.worst, 0)} / +${num(o.best, 0)} kr</b></div>
+    </div>
+    <p class="muted" style="margin:0 0 6px">By match: ${o.by_match.map(m => `${esc(m.match)} <b>${num(m.stake, 0)} kr</b>${m.n > 1 ? ` (${m.n} bets)` : ""}`).join(" · ")}</p>
+    <p class="muted" style="margin:0 0 12px">Simulated from the app's chances, treating each bet as separate. Bets on the same match tend to win or lose together, so the real range is wider. <b>Take Profit above</b>: if Danske Spil's Take Profit offer is higher than this before kick-off, taking it beats keeping the bet.</p>
+    <h3 class="sub">All bets</h3>` : "";
+  $("bets").innerHTML = bets.length ? `<tr><th>Match</th><th>Selection</th><th>Odds</th><th>Stake</th><th>EV</th><th>Take Profit above</th><th>Close</th><th>Result</th><th>P/L</th><th></th></tr>` +
     bets.map(b => `<tr><td>${esc(b.home)} – ${esc(b.away)}</td><td>${esc(b.market)}</td><td>${num(b.odds)}</td>
-      <td>${num(b.stake, 0)}</td><td>${pct(b.ev)}</td><td>${num(b.closing_odds)}</td>
+      <td>${num(b.stake, 0)}</td><td>${pct(b.ev)}</td><td>${b.take_profit_above == null ? "–" : num(b.take_profit_above, 0) + " kr"}</td><td>${num(b.closing_odds)}</td>
       <td>${b.status}${b.home_goals != null ? ` (${b.home_goals}-${b.away_goals})` : ""}</td>
       <td class="${(b.pnl || 0) >= 0 ? "pos" : "neg"}">${num(b.pnl, 0)}</td>
       <td><button class="small secondary" onclick="settle(${b.id})">Settle</button>

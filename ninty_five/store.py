@@ -7,6 +7,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
+
 from .model import settle
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "bets.sqlite"
@@ -37,6 +39,47 @@ CREATE TABLE IF NOT EXISTS bets (
 MIGRATIONS = {"match_id": "INTEGER", "kickoff": "TEXT", "match_key": "TEXT"}
 
 
+def take_profit_above(bet: dict) -> float | None:
+    """The Take Profit (cash-out) offer above which taking the money beats
+    keeping the bet: stake * odds * chance it wins. Uses the app's blended
+    chance from when the bet was logged, so it holds before kick-off only."""
+    p = bet.get("p_blend") if bet.get("p_blend") is not None else bet.get("p_model")
+    return None if p is None else bet["stake"] * bet["odds"] * p
+
+
+def open_outlook(bets: list[dict], n: int = 20000, seed: int = 0) -> dict | None:
+    """Overview of open bets: stake, expected profit, and a simulated range of
+    outcomes. Bets are treated as independent, which understates the spread
+    when several bets are on the same match."""
+    bets = [b for b in bets if (b.get("p_blend") if b.get("p_blend") is not None else b.get("p_model")) is not None]
+    if not bets:
+        return None
+    p = np.array([b["p_blend"] if b.get("p_blend") is not None else b["p_model"] for b in bets])
+    win = np.array([b["stake"] * (b["odds"] - 1) for b in bets])
+    lose = np.array([float(b["stake"]) for b in bets])
+    wins = np.random.default_rng(seed).random((n, len(bets))) < p
+    pnl = (wins * win - ~wins * lose).sum(axis=1)
+    staked = float(lose.sum())
+    expected = float((p * win - (1 - p) * lose).sum())
+    by_match: dict[str, dict] = {}
+    for b in bets:
+        m = by_match.setdefault(f"{b['home']} – {b['away']}", {"match": f"{b['home']} – {b['away']}", "stake": 0, "n": 0})
+        m["stake"] += b["stake"]
+        m["n"] += 1
+    return {
+        "n": len(bets),
+        "staked": staked,
+        "expected_pnl": expected,
+        "expected_return": expected / staked,
+        "p_profit": float(np.mean(pnl > 0)),
+        "p10": float(np.percentile(pnl, 10)),
+        "p90": float(np.percentile(pnl, 90)),
+        "worst": -staked,
+        "best": float(win.sum()),
+        "by_match": sorted(by_match.values(), key=lambda m: -m["stake"]),
+    }
+
+
 class BetStore:
     def __init__(self, path: Path | str = DB_PATH):
         self.path = Path(path)
@@ -65,7 +108,10 @@ class BetStore:
 
     def list(self) -> list[dict]:
         with self._conn() as c:
-            return [dict(r) for r in c.execute("SELECT * FROM bets ORDER BY id DESC")]
+            bets = [dict(r) for r in c.execute("SELECT * FROM bets ORDER BY id DESC")]
+        for b in bets:
+            b["take_profit_above"] = take_profit_above(b) if b["status"] == "open" else None
+        return bets
 
     def delete(self, bet_id: int) -> None:
         with self._conn() as c:
@@ -132,6 +178,7 @@ class BetStore:
             "expected_pnl": round(expected, 2),
             "avg_clv": round(sum(clv) / len(clv), 4) if clv else None,
             "n_clv": len(clv),
+            "outlook": open_outlook(open_),
         }
 
     def auto_settle_keys(self, results: dict[str, tuple[int, int]]) -> list[int]:
