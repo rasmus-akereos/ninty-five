@@ -8,9 +8,16 @@ It then shows the edge and a suggested stake, and keeps a log of your bets.
 ## Run it
 
 ```bash
+python3 -m venv .venv            # Debian/Ubuntu: sudo apt install python3-venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-ninty-five serve          # open http://127.0.0.1:8000
+ninty-five serve                 # open http://127.0.0.1:8000
 ```
+
+Modern Linux distributions block `pip install` into the system Python
+(PEP 668, "externally-managed-environment"), so always install into a
+virtual environment. Run `source .venv/bin/activate` again in each new
+terminal before using `ninty-five`.
 
 1. Pick a data set: **International** (every national team worldwide, so
    World Cup, Euros, qualifiers and Nations League) or a club league.
