@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ninty-five</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20190%2096%22%3E%3Crect%20x%3D%226%22%20y%3D%2210%22%20width%3D%22178%22%20height%3D%2276%22%20rx%3D%2214%22%20fill%3D%22%23101a2e%22%20stroke%3D%22%235ee0a0%22%20stroke-width%3D%227%22/%3E%3Ctext%20x%3D%2295%22%20y%3D%2268%22%20text-anchor%3D%22middle%22%20font-family%3D%22ui-monospace%2C%20Menlo%2C%20Consolas%2C%20monospace%22%20font-size%3D%2252%22%20font-weight%3D%22800%22%20fill%3D%22%235ee0a0%22%3E90%3Ctspan%20fill%3D%22%23ffb347%22%3E%2B5%3C/tspan%3E%3C/text%3E%3C/svg%3E">
 <style>
 /* Sportsbook dark: deep navy, lighter navy cards, bright green for value. */
 :root {
@@ -30,7 +31,8 @@ a { color: var(--accent); }
 /* top bar */
 .topbar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
 .topbar-inner { max-width: 1100px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
-.logo { font-weight: 800; font-size: 18px; letter-spacing: .01em; color: var(--accent); margin-right: auto; }
+.logo { font-weight: 800; font-size: 18px; letter-spacing: .01em; color: var(--accent); margin-right: auto; display: flex; align-items: center; gap: 10px; }
+.logo-mark { width: 58px; height: 30px; flex: none; }
 .logo span { color: var(--text); font-weight: 600; font-size: 12px; margin-left: 8px; opacity: .6; }
 .icon-btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
 .icon-btn:hover { border-color: var(--accent); }
@@ -135,7 +137,15 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
 <body>
 <div class="topbar">
   <div class="topbar-inner">
-    <div class="logo">ninty-five<span>model vs. Danske Spil</span></div>
+    <div class="logo">
+      <!-- 90+5: the fourth official's stoppage-time board, the 95th minute -->
+      <svg class="logo-mark" viewBox="0 0 190 96" aria-hidden="true">
+        <rect x="6" y="10" width="178" height="76" rx="14" fill="var(--panel)" stroke="var(--accent)" stroke-width="6"/>
+        <rect x="83" y="86" width="24" height="9" rx="3" fill="var(--border)"/>
+        <text x="95" y="66" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="50" font-weight="800" fill="var(--accent)">90<tspan fill="#ffb347">+5</tspan></text>
+      </svg>
+      ninty-five<span>model vs. Danske Spil</span>
+    </div>
     <button class="icon-btn primary" id="loadboard" title="Fetch the latest fixtures and results">↻ Refresh</button>
     <button class="icon-btn" id="settings-btn" title="Settings">⚙ Settings</button>
     <button class="icon-btn" id="theme-btn" title="Light / dark">◐</button>
