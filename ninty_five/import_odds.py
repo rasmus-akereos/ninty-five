@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from difflib import SequenceMatcher
 
 PRICE = re.compile(r"^\d+,\d+$|^\d+\.\d{2}$")
 LINE = re.compile(r"^\d+(?:[.,]5)$")
@@ -39,7 +40,8 @@ DANISH_COUNTRIES = {
     "canada": "canada", "japan": "japan", "sydkorea": "south korea", "kina": "china", "australien": "australia",
     "marokko": "morocco", "egypten": "egypt", "nigeria": "nigeria", "ghana": "ghana", "senegal": "senegal",
     "elfenbenskysten": "ivory coast", "cameroun": "cameroon", "algeriet": "algeria", "tunesien": "tunisia",
-    "sydafrika": "south africa", "saudi arabien": "saudi arabia", "iran": "iran", "irak": "iraq", "qatar": "qatar",
+    "sydafrika": "south africa", "saudi arabien": "saudi arabia", "iran": "iran", "irak": "iraq", "qatar": "qatar", "indien": "india",
+    "new zealand": "new zealand", "jamaica": "jamaica", "haiti": "haiti",
 }
 STOPWORDS = {"fc", "afc", "cf", "sk", "kv", "sc", "ac", "as", "fk", "club", "de", "the", "cd", "sv", "vfb", "vfl", "ss"}
 
@@ -57,6 +59,14 @@ def _tokens(name: str) -> list[str]:
     return [t for t in folded.split() if t not in STOPWORDS] or folded.split()
 
 
+def _word_match(ds: str, board: str) -> bool:
+    """A Danske Spil word matches a board word if it starts it ("Man" ->
+    "Manchester") or is a near spelling of it ("Shaktar" ~ "Shakhtar")."""
+    if board.startswith(ds):
+        return True
+    return len(ds) >= 4 and ds[0] == board[0] and SequenceMatcher(None, ds, board).ratio() >= 0.8
+
+
 def same_team(danskespil: str, board: str) -> bool:
     """Danske Spil uses short names ("Blackburn", "Man United", "Atl. Madrid").
     Every one of its words must start a different word of the board name, or
@@ -66,7 +76,7 @@ def same_team(danskespil: str, board: str) -> bool:
         return False
     used: set[int] = set()
     for t in ds:
-        hit = next((i for i, b in enumerate(bd) if i not in used and b.startswith(t)), None)
+        hit = next((i for i, b in enumerate(bd) if i not in used and _word_match(t, b)), None)
         if hit is None and len(t) > 1:
             for i in range(len(bd) - len(t) + 1):
                 span = range(i, i + len(t))
@@ -81,10 +91,32 @@ def same_team(danskespil: str, board: str) -> bool:
     return True
 
 
+# Words shared by many clubs: matching on these alone would mix up matches.
+COMMON_WORDS = {"city", "united", "town", "county", "athletic", "rovers", "wanderers", "albion", "real",
+                "sport", "sports", "saint", "st", "racing", "olympique", "dynamo", "dinamo", "republic", "islands",
+                "north", "south", "new", "arab", "emirates"}
+
+
+def _shares_word(danskespil: str, board: str) -> bool:
+    bd = [b for b in _tokens(board) if b not in COMMON_WORDS]
+    return any(_word_match(t, b) for t in _tokens(danskespil) if t not in COMMON_WORDS for b in bd)
+
+
 def find_match(home: str, away: str, board: list[dict]) -> dict | None:
-    """The board match whose home and away teams both match, if exactly one."""
-    hits = [m for m in board if same_team(home, m["home"]) and same_team(away, m["away"])]
-    return hits[0] if len(hits) == 1 else None
+    """The board match for a Danske Spil match: both teams matching, or failing
+    that, one team matching and the other sharing a word (Danske Spil uses some
+    Danish club names, e.g. "Sporting Lissabon" for Sporting Clube de Portugal).
+    Only a single unambiguous match counts."""
+    both = [m for m in board if same_team(home, m["home"]) and same_team(away, m["away"])]
+    if not both:
+        both = [m for m in board
+                if (same_team(home, m["home"]) and _shares_word(away, m["away"]))
+                or (same_team(away, m["away"]) and _shares_word(home, m["home"]))]
+    # The same two teams can meet twice in the window (e.g. two friendlies):
+    # take the next one. Different pairs of teams are ambiguous.
+    if len({(m["home"], m["away"]) for m in both}) != 1:
+        return None
+    return min(both, key=lambda m: m.get("kickoff", ""))
 
 
 def _price(s: str) -> float | None:

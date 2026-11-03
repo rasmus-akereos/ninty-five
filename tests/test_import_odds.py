@@ -38,3 +38,35 @@ def test_find_match_on_board():
     assert import_odds.find_match("Blackburn", "Stoke", board)["key"] == "fd:2"
     assert import_odds.find_match("Stoke", "Blackburn", board) is None  # home/away must agree
     assert import_odds.find_match("Leeds", "Hull", board) is None
+
+
+def test_spelling_variants_match():
+    m = import_odds.same_team
+    assert m("Shaktar Donetsk", "FK Shakhtar Donetsk")
+    assert not m("Shaktar Donetsk", "Dynamo Kyiv")
+
+
+def test_one_team_plus_a_shared_word_is_enough():
+    board = [{"key": "fd:575377", "home": "FK Shakhtar Donetsk", "away": "Sporting Clube de Portugal"},
+             {"key": "fd:567350", "home": "Sporting Clube de Portugal", "away": "Moreirense FC"}]
+    hit = import_odds.find_match("FC Shakhtar Donetsk", "Sporting Lissabon", board)
+    assert hit["key"] == "fd:575377"
+    # one side alone, with nothing in common on the other side, is not enough
+    assert import_odds.find_match("FC Shakhtar Donetsk", "Benfica", board) is None
+
+
+def test_common_words_are_not_enough():
+    board = [{"key": "fd:1", "home": "Birmingham City FC", "away": "Swansea City AFC"},
+             {"key": "fd:2", "home": "Manchester United FC", "away": "Aston Villa FC"}]
+    assert import_odds.find_match("Cardiff City", "Swansea", board) is None
+    assert import_odds.find_match("United Arab Emirates", "Aston Villa", board) is None
+
+
+def test_near_spelling_needs_same_first_letter():
+    assert not import_odds.same_team("Angers", "Queens Park Rangers FC")
+
+
+def test_same_teams_twice_picks_the_next_match():
+    board = [{"key": "espn:2", "home": "New Zealand", "away": "India", "kickoff": "2026-11-15T07:00:00+00:00"},
+             {"key": "espn:1", "home": "New Zealand", "away": "India", "kickoff": "2026-11-12T07:00:00+00:00"}]
+    assert import_odds.find_match("New Zealand", "Indien", board)["key"] == "espn:1"
