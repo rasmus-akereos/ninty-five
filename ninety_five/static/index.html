@@ -30,7 +30,7 @@ a { color: var(--accent); }
 
 /* top bar */
 .topbar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
-.topbar-inner { max-width: 1100px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
+.topbar-inner { max-width: 1280px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
 .logo { font-weight: 800; font-size: 18px; letter-spacing: .01em; color: var(--accent); display: flex; align-items: center; gap: 10px; margin-right: 8px; }
 .logo-mark { width: 58px; height: 30px; flex: none; }
 .logo span { color: var(--text); font-weight: 600; font-size: 12px; margin-left: 8px; opacity: .6; }
@@ -43,7 +43,7 @@ a { color: var(--accent); }
 .tab .n { font-size: 11px; opacity: .75; margin-left: 2px; }
 .tabpane { display: grid; gap: 16px; }
 .tabpane[hidden] { display: none; }
-.chips-bar { max-width: 1100px; margin: 0 auto; padding: 0 16px 10px; }
+.chips-bar { max-width: 1280px; margin: 0 auto; padding: 0 16px 10px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { flex: none; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
 /* phone: the top bar wraps (tabs get their own row), league chips scroll
@@ -70,7 +70,7 @@ a { color: var(--accent); }
 .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
 .chip .n { opacity: .7; margin-left: 5px; font-size: 11px; }
 
-main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+main { max-width: 1280px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
 section, .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; min-width: 0; box-shadow: var(--shadow); }
 h2 { margin: 0 0 12px; font-size: 16px; }
 h3.sub { margin: 4px 0 8px; font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
