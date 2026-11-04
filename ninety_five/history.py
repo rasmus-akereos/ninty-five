@@ -60,6 +60,28 @@ CREATE TABLE IF NOT EXISTS odds_entries (
 );
 CREATE INDEX IF NOT EXISTS odds_identity ON odds_entries(match_key, dataset, home, away, market, id);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS tuned (
+    setting TEXT NOT NULL,         -- 'alpha' | 'half_life'
+    scope TEXT NOT NULL,           -- 'all' | a competition (alpha); 'club' (half_life)
+    value REAL NOT NULL,
+    updated TEXT NOT NULL,
+    PRIMARY KEY (setting, scope)
+);
+CREATE TABLE IF NOT EXISTS tuning_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    setting TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    old REAL,
+    new REAL,
+    action TEXT NOT NULL,          -- 'changed' | 'kept' | 'reverted'
+    n INTEGER,
+    loss_old REAL,
+    loss_new REAL,
+    se REAL,
+    note TEXT NOT NULL DEFAULT '',
+    reverted_at TEXT
+);
 CREATE TABLE IF NOT EXISTS leases (
     name TEXT PRIMARY KEY,         -- e.g. 'refresh': one fetch at a time
     holder TEXT NOT NULL,
@@ -326,6 +348,62 @@ class HistoryStore:
         """match_key -> competition for every board match seen."""
         with self._conn() as c:
             return {r["key"]: r["competition"] for r in c.execute("SELECT key, competition FROM matches")}
+
+    # ------------------------------------------------------------ tuning
+    REVERT_BLOCK_DAYS = 30
+
+    def tuned(self) -> dict[tuple[str, str], float]:
+        with self._conn() as c:
+            return {(r["setting"], r["scope"]): r["value"] for r in c.execute("SELECT * FROM tuned")}
+
+    def set_tuned(self, setting: str, scope: str, value: float, at: str) -> None:
+        with self._conn() as c:
+            c.execute("INSERT INTO tuned (setting, scope, value, updated) VALUES (?, ?, ?, ?) "
+                      "ON CONFLICT(setting, scope) DO UPDATE SET value = excluded.value, updated = excluded.updated",
+                      (setting, scope, value, at))
+
+    _LOG_COLS = ("at", "setting", "scope", "old", "new", "action", "n", "loss_old", "loss_new", "se", "note")
+
+    def log_tuning(self, entry: dict) -> int:
+        vals = tuple(entry.get(k, "" if k == "note" else None) for k in self._LOG_COLS)
+        with self._conn() as c:
+            cur = c.execute(f"INSERT INTO tuning_log ({', '.join(self._LOG_COLS)}) VALUES "
+                            f"({', '.join('?' * len(self._LOG_COLS))})", vals)
+            return int(cur.lastrowid)
+
+    def tuning_log(self, limit: int = 50) -> list[dict]:
+        with self._conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM tuning_log ORDER BY id DESC LIMIT ?", (limit,))]
+
+    def last_tuning(self, setting: str, scope: str, action: str | None = None) -> dict | None:
+        sql, args = "SELECT * FROM tuning_log WHERE setting = ? AND scope = ?", [setting, scope]
+        if action:
+            sql += " AND action = ?"
+            args.append(action)
+        with self._conn() as c:
+            row = c.execute(sql + " ORDER BY id DESC LIMIT 1", args).fetchone()
+        return dict(row) if row else None
+
+    def revert(self, log_id: int, now: str) -> dict:
+        """Undo one 'changed' entry: the setting goes back to its old value and
+        a 'reverted' entry is logged (which blocks re-tuning for 30 days)."""
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM tuning_log WHERE id = ?", (log_id,)).fetchone()
+            if row is None or row["action"] != "changed" or row["reverted_at"]:
+                raise ValueError("Only an applied change can be reverted, and only once")
+            c.execute("UPDATE tuning_log SET reverted_at = ? WHERE id = ?", (now, log_id))
+            c.execute("INSERT INTO tuned (setting, scope, value, updated) VALUES (?, ?, ?, ?) "
+                      "ON CONFLICT(setting, scope) DO UPDATE SET value = excluded.value, updated = excluded.updated",
+                      (row["setting"], row["scope"], row["old"], now))
+            cur = c.execute("INSERT INTO tuning_log (at, setting, scope, old, new, action, note) "
+                            "VALUES (?, ?, ?, ?, ?, 'reverted', ?)",
+                            (now, row["setting"], row["scope"], row["new"], row["old"], f"undid change #{log_id}"))
+            new_id = cur.lastrowid
+        return dict(self._conn().execute("SELECT * FROM tuning_log WHERE id = ?", (new_id,)).fetchone())
+
+    def blocked(self, setting: str, scope: str, now: pd.Timestamp) -> bool:
+        last = self.last_tuning(setting, scope, action="reverted")
+        return bool(last) and now - pd.Timestamp(last["at"]) < pd.Timedelta(days=self.REVERT_BLOCK_DAYS)
 
     # ------------------------------------------------------- track record
     def finished(self, competition: str | None = None) -> list[dict]:

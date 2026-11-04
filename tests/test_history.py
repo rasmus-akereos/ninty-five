@@ -186,3 +186,24 @@ def test_finished_includes_xg(tmp_path):
     h.save_board([_row(kickoff="2026-11-03T20:00:00+00:00")], "2026-11-03T10:00:00+00:00")
     h.set_result("fd:1", 1, 0, "FINISHED")
     assert h.finished()[0]["xg"] == [1.2, 1.0]
+
+
+def test_revert_restores_and_blocks(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    h.set_tuned("alpha", "all", 0.6, "2026-11-04T07:00:00+00:00")
+    log_id = h.log_tuning({"at": "2026-11-04T07:00:00+00:00", "setting": "alpha", "scope": "all", "old": 0.5,
+                           "new": 0.6, "action": "changed", "n": 150, "loss_old": 1.0, "loss_new": 0.98,
+                           "se": 0.005, "note": ""})
+    assert h.tuned() == {("alpha", "all"): 0.6}
+    now = pd.Timestamp("2026-11-04T08:00Z")
+    h.revert(log_id, now.isoformat())
+    assert h.tuned()[("alpha", "all")] == 0.5
+    assert h.blocked("alpha", "all", now + pd.Timedelta(days=29))
+    assert not h.blocked("alpha", "all", now + pd.Timedelta(days=31))
+    assert not h.blocked("alpha", "England 2", now)
+    with pytest.raises(ValueError):
+        h.revert(log_id, now.isoformat())
+    log = h.tuning_log()
+    assert [r["action"] for r in log] == ["reverted", "changed"] and log[1]["reverted_at"]
+    assert h.last_tuning("alpha", "all")["action"] == "reverted"
+    assert h.last_tuning("alpha", "all", action="changed")["id"] == log_id
