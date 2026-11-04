@@ -372,8 +372,25 @@ class HistoryStore:
             return int(cur.lastrowid)
 
     def tuning_log(self, limit: int = 50) -> list[dict]:
+        """Newest first; `revertable` marks the one change per setting that Revert may undo."""
         with self._conn() as c:
-            return [dict(r) for r in c.execute("SELECT * FROM tuning_log ORDER BY id DESC LIMIT ?", (limit,))]
+            rows = [dict(r) for r in c.execute("SELECT * FROM tuning_log ORDER BY id DESC LIMIT ?", (limit,))]
+            for r in rows:
+                r["revertable"] = r["action"] == "changed" and self._revert_problem(c, r) is None
+        return rows
+
+    def _revert_problem(self, c: sqlite3.Connection, row) -> str | None:
+        """Why this log row can't be reverted, or None. Only the latest change of
+        a setting, while it's still the value in use, can be undone: undoing an
+        older one would bring back a value that was already replaced."""
+        if row["action"] != "changed" or row["reverted_at"]:
+            return "Only an applied change can be reverted, and only once"
+        latest = c.execute("SELECT id FROM tuning_log WHERE setting = ? AND scope = ? AND action = 'changed' "
+                           "ORDER BY id DESC LIMIT 1", (row["setting"], row["scope"])).fetchone()
+        cur = c.execute("SELECT value FROM tuned WHERE setting = ? AND scope = ?", (row["setting"], row["scope"])).fetchone()
+        if latest["id"] != row["id"] or cur is None or cur["value"] != row["new"]:
+            return "Only the latest change, while it is still in use, can be reverted"
+        return None
 
     def last_tuning(self, setting: str, scope: str, action: str | None = None) -> dict | None:
         sql, args = "SELECT * FROM tuning_log WHERE setting = ? AND scope = ?", [setting, scope]
@@ -389,12 +406,19 @@ class HistoryStore:
         a 'reverted' entry is logged (which blocks re-tuning for 30 days)."""
         with self._conn() as c:
             row = c.execute("SELECT * FROM tuning_log WHERE id = ?", (log_id,)).fetchone()
-            if row is None or row["action"] != "changed" or row["reverted_at"]:
-                raise ValueError("Only an applied change can be reverted, and only once")
+            if row is None:
+                raise ValueError("No such change")
+            problem = self._revert_problem(c, row)
+            if problem:
+                raise ValueError(problem)
             c.execute("UPDATE tuning_log SET reverted_at = ? WHERE id = ?", (now, log_id))
-            c.execute("INSERT INTO tuned (setting, scope, value, updated) VALUES (?, ?, ?, ?) "
-                      "ON CONFLICT(setting, scope) DO UPDATE SET value = excluded.value, updated = excluded.updated",
-                      (row["setting"], row["scope"], row["old"], now))
+            earlier = c.execute("SELECT 1 FROM tuning_log WHERE setting = ? AND scope = ? AND action = 'changed' "
+                                "AND id < ?", (row["setting"], row["scope"], log_id)).fetchone()
+            if earlier is None:  # its first change: go back to following the default / overall value
+                c.execute("DELETE FROM tuned WHERE setting = ? AND scope = ?", (row["setting"], row["scope"]))
+            else:
+                c.execute("UPDATE tuned SET value = ?, updated = ? WHERE setting = ? AND scope = ?",
+                          (row["old"], now, row["setting"], row["scope"]))
             cur = c.execute("INSERT INTO tuning_log (at, setting, scope, old, new, action, note) "
                             "VALUES (?, ?, ?, ?, ?, 'reverted', ?)",
                             (now, row["setting"], row["scope"], row["new"], row["old"], f"undid change #{log_id}"))

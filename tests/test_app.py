@@ -259,7 +259,7 @@ def test_tuning_endpoint_and_revert(client):
     r = client.post(f"/api/tuning/{log_id}/revert")
     assert r.status_code == 200 and r.json()["action"] == "reverted"
     assert client.post(f"/api/tuning/{log_id}/revert").status_code == 400
-    assert h.tuned()[("alpha", "all")] == 0.5
+    assert ("alpha", "all") not in h.tuned()  # first change undone: back to the default
 
 
 def _page(client):

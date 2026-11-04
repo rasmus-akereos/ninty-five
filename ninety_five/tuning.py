@@ -122,6 +122,14 @@ def _apply(history, d: Decision, now) -> None:
     history.log_tuning(d.to_log(_iso(now)))
 
 
+def _awaiting_evidence(history, setting: str, scope: str, n: int) -> bool:
+    """After a change, wait for CONFIRM_SHARE more matches before testing again,
+    so the next step is confirmed on new matches, not the ones that justified
+    the last step."""
+    last = history.last_tuning(setting, scope, action="changed")
+    return bool(last) and not last["reverted_at"] and n < int(np.ceil((last["n"] or 0) * (1 + CONFIRM_SHARE)))
+
+
 def run_alpha(history, now) -> list[Decision]:
     """Test the overall weight, then each league with enough evidence of its own."""
     evidence = alpha_evidence(history.finished())
@@ -132,7 +140,7 @@ def run_alpha(history, now) -> list[Decision]:
     scopes = [("all", evidence)] + [(c, rows) for c, rows in sorted(by_league.items()) if len(rows) >= ALPHA_MIN_N]
     out = []
     for scope, rows in scopes:
-        if history.blocked("alpha", scope, now):
+        if history.blocked("alpha", scope, now) or _awaiting_evidence(history, "alpha", scope, len(rows)):
             continue
         current = tuned.get(("alpha", scope), tuned.get(("alpha", "all"), ALPHA_DEFAULT))
         d = decide_alpha(rows, current, scope)

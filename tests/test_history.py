@@ -197,7 +197,7 @@ def test_revert_restores_and_blocks(tmp_path):
     assert h.tuned() == {("alpha", "all"): 0.6}
     now = pd.Timestamp("2026-11-04T08:00Z")
     h.revert(log_id, now.isoformat())
-    assert h.tuned()[("alpha", "all")] == 0.5
+    assert ("alpha", "all") not in h.tuned()  # first change undone: back to the default
     assert h.blocked("alpha", "all", now + pd.Timedelta(days=29))
     assert not h.blocked("alpha", "all", now + pd.Timedelta(days=31))
     assert not h.blocked("alpha", "England 2", now)
@@ -207,3 +207,29 @@ def test_revert_restores_and_blocks(tmp_path):
     assert [r["action"] for r in log] == ["reverted", "changed"] and log[1]["reverted_at"]
     assert h.last_tuning("alpha", "all")["action"] == "reverted"
     assert h.last_tuning("alpha", "all", action="changed")["id"] == log_id
+
+
+def _change(h, old, new, scope="all", at="2026-11-04T07:00:00+00:00"):
+    h.set_tuned("alpha", scope, new, at)
+    return h.log_tuning({"at": at, "setting": "alpha", "scope": scope, "old": old, "new": new, "action": "changed"})
+
+
+def test_only_latest_change_can_be_reverted(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    first = _change(h, 0.5, 0.6)
+    second = _change(h, 0.6, 0.7, at="2026-11-05T07:00:00+00:00")
+    with pytest.raises(ValueError):
+        h.revert(first, "2026-11-06T07:00:00+00:00")
+    assert h.tuned()[("alpha", "all")] == 0.7
+    h.revert(second, "2026-11-06T07:00:00+00:00")
+    assert h.tuned()[("alpha", "all")] == 0.6
+    flags = {r["id"]: r["revertable"] for r in h.tuning_log() if r["action"] == "changed"}
+    assert flags == {first: False, second: False}  # first is no longer the live value's change
+
+
+def test_reverting_first_league_change_restores_fallback(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    rid = _change(h, 0.5, 0.6, scope="England 2")  # 0.5 was inherited from the overall value
+    assert [r["revertable"] for r in h.tuning_log()] == [True]
+    h.revert(rid, "2026-11-06T07:00:00+00:00")
+    assert ("alpha", "England 2") not in h.tuned()

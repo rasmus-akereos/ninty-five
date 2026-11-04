@@ -1004,7 +1004,7 @@ function renderTuning(t) {
   const log = t.log.length ? t.log.map(r => `<tr><td>${shortDate(r.at)}</td><td>${SETTING[r.setting]}</td><td>${esc(scopeName(r.setting, r.scope))}</td>
       <td>${settingValue(r.setting, r.old)} → ${settingValue(r.setting, r.new)}</td><td>${r.action}</td>
       <td class="wrap">${r.loss_old != null ? `log loss ${num(r.loss_old, 4)} → ${num(r.loss_new, 4)} (± ${num(r.se, 4)}), n=${r.n}` : esc(r.note || "")}</td>
-      <td>${r.action === "changed" && !r.reverted_at ? `<span data-revert="${r.id}"><button class="small secondary" onclick="askRevert(${r.id})">Revert</button></span>`
+      <td>${r.revertable ? `<span data-revert="${r.id}"><button class="small secondary" onclick="askRevert(${r.id})">Revert</button></span>`
         : r.reverted_at ? '<span class="muted">reverted</span>' : ""}</td></tr>`).join("")
     : `<tr><td class="muted" colspan="7">No tests yet. The first runs after the morning refresh once there's enough evidence.</td></tr>`;
   $("sub-tuning").innerHTML = `

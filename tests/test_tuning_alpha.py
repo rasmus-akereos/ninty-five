@@ -94,7 +94,7 @@ def test_run_alpha_changes_logs_and_skips_blocked(tmp_path, monkeypatch):
     h.revert(change["id"], now.isoformat())
     later = tuning.run_alpha(h, now + pd.Timedelta(days=1))
     assert all(d.scope != "all" for d in later)
-    assert h.tuned()[("alpha", "all")] == 0.5
+    assert ("alpha", "all") not in h.tuned()  # first change undone: back to the default
 
 
 def test_run_alpha_waiting_logs_nothing(tmp_path, monkeypatch):
@@ -103,3 +103,22 @@ def test_run_alpha_waiting_logs_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(h, "finished", lambda competition=None: _finished(40))
     assert [d.action for d in tuning.run_alpha(h, pd.Timestamp("2026-11-04T07:00Z"))] == ["waiting"]
     assert h.tuning_log() == []
+
+
+def test_no_second_step_without_new_evidence(tmp_path, monkeypatch):
+    """A change must not be followed by another on (nearly) the same matches."""
+    from ninety_five.history import HistoryStore
+    h = HistoryStore(tmp_path / "h.sqlite")
+    rows = _finished(400)
+    monkeypatch.setattr(h, "finished", lambda competition=None: rows)
+    now = pd.Timestamp("2026-11-04T07:00Z")
+    tuning.run_alpha(h, now)
+    assert h.tuned()[("alpha", "all")] == pytest.approx(0.6)
+    for day in (1, 2, 3):
+        tuning.run_alpha(h, now + pd.Timedelta(days=day))
+    assert h.tuned()[("alpha", "all")] == pytest.approx(0.6)
+    rows += _finished(130, seed=9)  # 30% more matches: a new test may run
+    rows[:] = [{**r, "kickoff": (pd.Timestamp("2026-01-01T15:00Z") + pd.Timedelta(hours=i)).isoformat()}
+               for i, r in enumerate(rows)]
+    ds = tuning.run_alpha(h, now + pd.Timedelta(days=4))
+    assert any(d.scope == "all" for d in ds)
