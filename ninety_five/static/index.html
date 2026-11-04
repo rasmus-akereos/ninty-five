@@ -740,6 +740,13 @@ async function del(id) {
   loadBets();
 }
 
+// "Wed 4/11 20:45" in local time; "–" for manual matches without a kick-off.
+const kickoffLabel = iso => {
+  if (!iso) return "–";
+  const t = new Date(iso);
+  return `${t.toLocaleDateString([], { weekday: "short" })} ${t.getDate()}/${t.getMonth() + 1} ${hhmm(iso)}`;
+};
+
 async function loadBets() {
   const { bets, summary: s } = await api("/api/bets");
   openBets = bets.filter(b => b.status === "open");
@@ -772,8 +779,8 @@ async function loadBets() {
     <p class="muted" style="margin:0 0 6px">By match: ${o.by_match.map(m => `${esc(m.match)} <b>${num(m.stake, 0)} kr</b>${m.n > 1 ? ` (${m.n} bets)` : ""}`).join(" · ")}</p>
     <p class="muted" style="margin:0 0 12px">Simulated from the app's chances, treating each bet as separate. Bets on the same match tend to win or lose together, so the real range is wider. <b>Take Profit above</b>: if Danske Spil's Take Profit offer is higher than this before kick-off, taking it beats keeping the bet.</p>
     <h3 class="sub">All bets</h3>` : "";
-  $("bets").innerHTML = bets.length ? `<tr><th>Match</th><th>Selection</th><th>Odds</th><th>Stake</th><th>EV</th><th>Take Profit above</th><th>Close</th><th>Result</th><th>P/L</th><th></th></tr>` +
-    bets.map(b => `<tr><td>${esc(b.home)} – ${esc(b.away)}</td><td>${esc(b.market)}</td><td>${num(b.odds)}</td>
+  $("bets").innerHTML = bets.length ? `<tr><th>Kick-off</th><th>Match</th><th>Selection</th><th>Odds</th><th>Stake</th><th>EV</th><th>Take Profit above</th><th>Close</th><th>Result</th><th>P/L</th><th></th></tr>` +
+    bets.map(b => `<tr><td>${kickoffLabel(b.kickoff)}</td><td>${esc(b.home)} – ${esc(b.away)}</td><td>${esc(b.market)}</td><td>${num(b.odds)}</td>
       <td>${num(b.stake, 0)}</td><td>${pct(b.ev)}</td><td>${b.take_profit_above == null ? "–" : num(b.take_profit_above, 0) + " kr"}</td><td>${num(b.closing_odds)}</td>
       <td>${b.status}${b.home_goals != null ? ` (${b.home_goals}-${b.away_goals})` : ""}</td>
       <td class="${(b.pnl || 0) >= 0 ? "pos" : "neg"}">${num(b.pnl, 0)}</td>

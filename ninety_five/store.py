@@ -126,6 +126,15 @@ class BetStore:
     def list(self) -> list[dict]:
         with self._conn() as c:
             bets = [dict(r) for r in c.execute("SELECT * FROM bets ORDER BY id DESC")]
+        # Open bets: soonest kick-off first. Settled: latest kick-off first.
+        # Bets without a kick-off (manual matches) go last in their group.
+        def when(b):
+            return datetime.fromisoformat(b["kickoff"]).timestamp() if b["kickoff"] else None
+        open_ = sorted((b for b in bets if b["status"] == "open"),
+                       key=lambda b: (when(b) is None, when(b) or 0))
+        done = sorted((b for b in bets if b["status"] != "open"),
+                      key=lambda b: (when(b) is None, -(when(b) or 0)))
+        bets = open_ + done
         for b in bets:
             b["take_profit_above"] = take_profit_above(b) if b["status"] == "open" else None
         return bets

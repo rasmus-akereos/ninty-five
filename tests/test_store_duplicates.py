@@ -73,3 +73,16 @@ def test_concurrent_duplicates_store_one(store):
     for t in threads:
         t.join()
     assert len(ok) == 1 and len(refused) == 7 and len(store.list()) == 1
+
+
+def test_list_open_by_kickoff_then_settled_latest_first(store):
+    def add(home, kickoff):
+        return store.add({**BASE, "home": home, "match_key": None, "kickoff": kickoff})
+    add("Late", "2026-11-06T20:00:00+00:00")
+    add("Soon", "2026-11-05T17:45:00+00:00")
+    add("Manual", None)
+    old = add("OldSettled", "2026-11-01T15:00:00+00:00")
+    new = add("NewSettled", "2026-11-03T20:00:00+00:00")
+    store.settle(old, home_goals=1, away_goals=0)
+    store.settle(new, home_goals=0, away_goals=0)
+    assert [b["home"] for b in store.list()] == ["Soon", "Late", "Manual", "NewSettled", "OldSettled"]
