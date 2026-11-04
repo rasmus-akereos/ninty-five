@@ -11,10 +11,14 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 
 import pandas as pd
 
-from . import data, intl_fixtures
+from . import cup_fixtures, data, intl_fixtures
+from .import_odds import COMMON_WORDS, _tokens
+from .league_fixtures import resolve_name
 
 log = logging.getLogger("ninty_five")
 
@@ -150,3 +154,88 @@ def european_results(start: pd.Timestamp, end: pd.Timestamp,
     lo, hi = start.tz_convert(None), end.tz_convert(None)
     df = df[(df["date"] >= lo) & (df["date"] <= hi)]
     return df.sort_values("date", kind="stable").reset_index(drop=True), warnings
+
+
+# ------------------------------------------------------------ club names
+# Country -> ESPN league scoreboard listing its clubs. SUI, ROU, FIN and POL
+# have no usable ESPN scoreboard (checked 2026-11-04): their clubs resolve by
+# the team lists alone.
+LEAGUE_SLUGS = {
+    "ENG": "eng.1", "GER": "ger.1", "ESP": "esp.1", "ITA": "ita.1", "FRA": "fra.1", "NED": "ned.1",
+    "POR": "por.1", "BEL": "bel.1", "SCO": "sco.1", "TUR": "tur.1", "GRE": "gre.1", "AUT": "aut.1",
+    "DEN": "den.1", "NOR": "nor.1", "SWE": "swe.1", "IRL": "irl.1",
+}
+# (country, ESPN name) -> football-data.co.uk name, where the matcher can't
+# tell. Check with `ninty-five uefa-names`.
+ALIASES: dict[tuple[str, str], str] = {
+    **{k: v for k, v in cup_fixtures.ALIASES.items() if k[0] in {"ENG", "GER", "ESP", "FRA", "DEN"}},
+}
+
+
+@dataclass
+class Resolution:
+    mapping: dict[str, str] = field(default_factory=dict)  # ESPN name -> model name
+    excluded: set[str] = field(default_factory=set)        # covered-country clubs not matched
+    european_only: set[str] = field(default_factory=set)
+    warnings: list[str] = field(default_factory=list)
+
+
+def _resolve(name: str, country: str, teams: list[str]) -> str | None:
+    """resolve_name, but a name made only of words many clubs share
+    ("Dinamo", "Real", "City") must match a team exactly."""
+    if not set(_tokens(name)) - COMMON_WORDS:
+        return name if name in teams else None
+    return resolve_name(name, country, teams)
+
+
+def _alias(name: str) -> str | None:
+    return next((v for (_, n), v in ALIASES.items() if n == name), None)
+
+
+def resolve_clubs(names: Iterable[str], teams: dict[str, list[str]],
+                  league_clubs: dict[str, set[str]]) -> Resolution:
+    """Map ESPN European club names to domestic team names. A club listed in
+    a covered country's ESPN league resolves within that country only; any
+    other club must match exactly one team in exactly one country's list.
+    Ambiguous or unmatched league clubs are excluded (with a warning); clubs
+    matching nothing are European-only and keep their ESPN name."""
+    out = Resolution()
+    for name in sorted(set(names)):
+        alias = _alias(name)
+        if alias is not None:
+            out.mapping[name] = alias
+            continue
+        homes = [c for c, clubs in league_clubs.items() if name in clubs]
+        if homes:
+            got = _resolve(name, homes[0], teams.get(homes[0], [])) if len(homes) == 1 else None
+        else:
+            hits = {c: t for c in teams if (t := _resolve(name, c, teams[c])) is not None}
+            if not hits:
+                out.mapping[name] = name
+                out.european_only.add(name)
+                continue
+            got = next(iter(hits.values())) if len(hits) == 1 else None
+        if got is None:
+            out.excluded.add(name)
+            out.warnings.append(f"UEFA: no domestic team for {name} (add it to uefa.ALIASES)")
+        else:
+            out.mapping[name] = got
+    return out
+
+
+def espn_league_clubs(now: pd.Timestamp) -> dict[str, set[str]]:
+    """ESPN names of each covered league's clubs (this month and last). A
+    league whose scoreboard fails or is empty is left out."""
+    out: dict[str, set[str]] = {}
+    for country, slug in LEAGUE_SLUGS.items():
+        names: set[str] = set()
+        for month in intl_fixtures._months(now - pd.DateOffset(months=1), now):
+            try:
+                df = intl_fixtures.parse_scoreboard(intl_fixtures._get(slug, month), club=True)
+            except Exception as exc:
+                log.warning("UEFA: %s %s unavailable: %s", slug, month, exc)
+                continue
+            names |= set(df["home"]) | set(df["away"])
+        if names:
+            out[country] = names
+    return out
