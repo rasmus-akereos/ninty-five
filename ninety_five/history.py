@@ -322,6 +322,11 @@ class HistoryStore:
             c.execute("UPDATE matches SET home_goals = ?, away_goals = ?, status = ? WHERE key = ?",
                       (hg, ag, status, key))
 
+    def competitions(self) -> dict[str, str]:
+        """match_key -> competition for every board match seen."""
+        with self._conn() as c:
+            return {r["key"]: r["competition"] for r in c.execute("SELECT key, competition FROM matches")}
+
     # ------------------------------------------------------- track record
     def finished(self, competition: str | None = None) -> list[dict]:
         """Matches with a result and a snapshot taken before kick-off, newest

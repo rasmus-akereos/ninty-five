@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import fixtures, import_odds, scheduler, service, track, uefa, validate
+from . import fixtures, import_odds, scheduler, service, stats, track, uefa, validate
 from .model import DixonColes, markets
 from .history import HistoryStore
 from .store import BetStore, DuplicateBet
@@ -177,6 +177,11 @@ def track_record(competition: str | None = None) -> dict:
             "bets": bets_by_key.get(m["key"], []),
         })
     return {"summary": track.summary(matches), "matches": recent}
+
+
+@app.get("/api/stats/betting")
+def stats_betting() -> dict:
+    return stats.betting(store.list(), history.competitions())
 
 
 @app.get("/api/teams")

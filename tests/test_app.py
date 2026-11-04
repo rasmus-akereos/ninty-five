@@ -195,3 +195,19 @@ def test_duplicate_bet_is_409(client):
     assert client.post("/api/bets", json=bet).status_code == 200
     r = client.post("/api/bets", json=bet)
     assert r.status_code == 409 and "Already logged: 1 on" in r.json()["detail"]
+
+
+def test_stats_betting_endpoint(client):
+    r = client.get("/api/stats/betting")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["tiles"]["n_settled"] == 0 and body["curve"] == []
+
+
+def test_stats_betting_uses_competition(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    app_mod.store.add({"dataset": "EUROPE", "home": "A", "away": "B", "market": "1", "odds": 2.0, "stake": 10,
+                       "match_key": "fd:1"})
+    open_ = client.get("/api/stats/betting").json()
+    assert open_["tiles"]["n_open"] == 1
+    assert app_mod.history.competitions() == {"fd:1": "England 2"}
