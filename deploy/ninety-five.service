@@ -1,0 +1,13 @@
+[Unit]
+Description=ninety-five betting board
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/code/ninety-five
+ExecStart=%h/code/ninety-five/.venv/bin/ninety-five serve --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

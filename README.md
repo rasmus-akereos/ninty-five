@@ -194,6 +194,24 @@ ninety-five backtest --dataset INTL           # walk-forward model test
 pytest
 ```
 
+## Running it all the time
+
+On this PC the app runs as a systemd user service (`deploy/ninety-five.service`),
+listening on 127.0.0.1:8000 only. It starts at boot and restarts itself within
+seconds if it crashes. The daily 07:00 fetch runs inside it as before.
+
+    # once: install and start
+    mkdir -p ~/.config/systemd/user
+    ln -sf ~/code/ninety-five/deploy/ninety-five.service ~/.config/systemd/user/
+    systemctl --user daemon-reload && systemctl --user enable --now ninety-five
+    sudo loginctl enable-linger $USER   # start at boot, without logging in
+
+    systemctl --user restart ninety-five       # after changing Python code
+    journalctl --user -u ninety-five -f        # follow the log
+    systemctl --user stop ninety-five          # stop it (e.g. to run it by hand)
+
+To use it from your phone, see [docs/phone-access.md](docs/phone-access.md).
+
 ## Data
 
 | Data set | Source | Notes |
