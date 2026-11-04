@@ -4,6 +4,7 @@ has an edge, so every bet placed should be logged here."""
 from __future__ import annotations
 
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -36,6 +37,13 @@ CREATE TABLE IF NOT EXISTS bets (
     match_key TEXT     -- board match key (fd:/espn:), enables auto-settlement
 );
 """
+_ADD_LOCK = threading.Lock()  # check-then-insert must not interleave (double tap, two tabs)
+
+
+class DuplicateBet(ValueError):
+    """An open bet on the same selection of the same match already exists."""
+
+
 MIGRATIONS = {"match_id": "INTEGER", "kickoff": "TEXT", "match_key": "TEXT"}
 
 
@@ -99,7 +107,16 @@ class BetStore:
     def add(self, bet: dict) -> int:
         fields = ["dataset", "home", "away", "market", "odds", "stake", "p_model", "p_blend", "ev", "match_id", "kickoff", "match_key"]
         values = [bet.get(f) for f in fields]
-        with self._conn() as c:
+        with _ADD_LOCK, self._conn() as c:
+            key = bet.get("match_key")
+            same = c.execute(
+                "SELECT 1 FROM bets WHERE status = 'open' AND market = ? AND ("
+                " (? IS NOT NULL AND match_key = ?)"
+                " OR ((? IS NULL OR match_key IS NULL) AND dataset = ? AND home = ? AND away = ?))",
+                (bet["market"], key, key, key, bet["dataset"], bet["home"], bet["away"]),
+            ).fetchone()
+            if same:
+                raise DuplicateBet(f"Already logged: {bet['market']} on {bet['home']} – {bet['away']}")
             cur = c.execute(
                 f"INSERT INTO bets (created, {', '.join(fields)}) VALUES (?, {', '.join('?' * len(fields))})",
                 [datetime.now(timezone.utc).isoformat(timespec="seconds"), *values],

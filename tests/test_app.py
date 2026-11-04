@@ -187,3 +187,11 @@ def test_board_keeps_european_only_flag(client, monkeypatch):
 def test_page_is_named_ninety_five(client):
     html = client.get("/").text
     assert "<title>ninety-five</title>" in html and "ninty" not in html
+
+
+def test_duplicate_bet_is_409(client):
+    bet = {"dataset": "E0", "home": "Watford", "away": "Lincoln", "market": "1", "odds": 2.0, "stake": 10,
+           "match_key": "fd:9"}
+    assert client.post("/api/bets", json=bet).status_code == 200
+    r = client.post("/api/bets", json=bet)
+    assert r.status_code == 409 and "Already logged: 1 on" in r.json()["detail"]

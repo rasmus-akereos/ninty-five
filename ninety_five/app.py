@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from . import fixtures, import_odds, scheduler, service, track, uefa, validate
 from .model import DixonColes, markets
 from .history import HistoryStore
-from .store import BetStore
+from .store import BetStore, DuplicateBet
 from .value import Settings, evaluate, market_probabilities, overround
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -247,7 +247,10 @@ def list_bets() -> dict:
 
 @app.post("/api/bets")
 def add_bet(bet: BetIn) -> dict:
-    return {"id": store.add(bet.model_dump())}
+    try:
+        return {"id": store.add(bet.model_dump())}
+    except DuplicateBet as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @app.post("/api/bets/{bet_id}/settle")
