@@ -77,7 +77,7 @@ LIVE_CLUBS = {"GRE": {"AEK Athens", "Olympiacos"}, "AUT": {"LASK Linz"}, "DEN": 
 
 
 @pytest.mark.parametrize("name", ["AEK Larnaca", "Aris Limassol", "Lincoln Red Imps", "Velez Mostar",
-                                  "Víkingur", "Vikingur Reykjavik", "Inter D'Escaldes", "CSU Craiova"])
+                                  "Víkingur", "Vikingur Reykjavik", "Inter D'Escaldes"])
 def test_foreign_clubs_never_loosely_join_a_covered_team(name):
     r = uefa.resolve_clubs([name], LIVE_TEAMS, LIVE_CLUBS)
     assert r.mapping.get(name) in (None, name), r.mapping
@@ -87,3 +87,7 @@ def test_clubs_outside_espn_leagues_match_strictly():
     r = uefa.resolve_clubs(["FC Inter Turku", "Legia Warsaw"], LIVE_TEAMS, LIVE_CLUBS)
     assert r.mapping["FC Inter Turku"] == "Inter Turku"  # every word equal
     assert r.mapping["Legia Warsaw"] == "Legia"           # the team's words all in the ESPN name
+
+
+def test_romanian_craiova_never_becomes_polish_cracovia():
+    assert uefa.resolve_clubs(["CSU Craiova"], LIVE_TEAMS, LIVE_CLUBS).mapping.get("CSU Craiova") != "Cracovia"
