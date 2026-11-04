@@ -21,7 +21,7 @@ import urllib.request
 import pandas as pd
 
 BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard"
-USER_AGENT = "ninty-five/0.1"
+USER_AGENT = "ninety-five/0.1"
 
 # Senior men's national-team competitions. Many are empty in a given month;
 # an empty answer costs one small request.

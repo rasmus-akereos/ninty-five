@@ -20,7 +20,7 @@ from . import cup_fixtures, data, intl_fixtures
 from .import_odds import COMMON_WORDS, _tokens
 from .league_fixtures import resolve_name
 
-log = logging.getLogger("ninty_five")
+log = logging.getLogger("ninety_five")
 
 # football-data.co.uk code -> (country key, label)
 UEFA_LEAGUES: dict[str, tuple[str, str]] = {
@@ -168,10 +168,10 @@ LEAGUE_SLUGS = {
     "DEN": "den.1", "NOR": "nor.1", "SWE": "swe.1", "IRL": "irl.1",
 }
 # (country, ESPN name) -> football-data.co.uk name, where the matcher can't
-# tell. Check with `ninty-five uefa-names`.
+# tell. Check with `ninety-five uefa-names`.
 ALIASES: dict[tuple[str, str], str] = {
     **{k: v for k, v in cup_fixtures.ALIASES.items() if k[0] in {"ENG", "GER", "ESP", "FRA", "DEN"}},
-    # Found with `ninty-five uefa-names` on 2026-11-04.
+    # Found with `ninety-five uefa-names` on 2026-11-04.
     ("ENG", "West Ham United"): "West Ham",
     ("GER", "1. FC Heidenheim 1846"): "Heidenheim",
     ("ESP", "Girona"): "Girona",

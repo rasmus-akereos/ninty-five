@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
-from ninty_five.store import BetStore
-from ninty_five.value import Settings, devig_power, evaluate, overround
+from ninety_five.store import BetStore
+from ninety_five.value import Settings, devig_power, evaluate, overround
 
 
 def test_devig_sums_to_one_and_shades_longshots():

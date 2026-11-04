@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ninty-five</title>
+<title>ninety-five</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20190%2096%22%3E%3Crect%20x%3D%226%22%20y%3D%2210%22%20width%3D%22178%22%20height%3D%2276%22%20rx%3D%2214%22%20fill%3D%22%23101a2e%22%20stroke%3D%22%235ee0a0%22%20stroke-width%3D%227%22/%3E%3Ctext%20x%3D%2295%22%20y%3D%2268%22%20text-anchor%3D%22middle%22%20font-family%3D%22ui-monospace%2C%20Menlo%2C%20Consolas%2C%20monospace%22%20font-size%3D%2252%22%20font-weight%3D%22800%22%20fill%3D%22%235ee0a0%22%3E90%3Ctspan%20fill%3D%22%23ffb347%22%3E%2B5%3C/tspan%3E%3C/text%3E%3C/svg%3E">
 <style>
 /* Sportsbook dark: deep navy, lighter navy cards, bright green for value. */
@@ -150,7 +150,7 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
         <rect x="83" y="86" width="24" height="9" rx="3" fill="var(--border)"/>
         <text x="95" y="66" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="50" font-weight="800" fill="var(--accent)">90<tspan fill="#ffb347">+5</tspan></text>
       </svg>
-      ninty-five<span>model vs. Danske Spil</span>
+      ninety-five<span>model vs. Danske Spil</span>
     </div>
     <nav class="tabs" role="tablist">
       <button class="tab" role="tab" data-tab="matches">Matches</button>
@@ -176,7 +176,7 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
       <div><label>Max stake (% bankroll)</label><input id="maxstake" type="number" step="0.5" value="3"></div>
       <div><label>Min edge to bet (EV %)</label><input id="minedge" type="number" step="0.5" value="3"></div>
     </div>
-    <p class="muted" id="import-help" style="margin-bottom:0">Danske Spil button: drag <a id="bookmarklet" class="bookmarklet" href="#">→ ninty-five</a> to your bookmarks bar. On a Danske Spil match page, click it to bring that match's odds here.</p>
+    <p class="muted" id="import-help" style="margin-bottom:0">Danske Spil button: drag <a id="bookmarklet" class="bookmarklet" href="#">→ ninety-five</a> to your bookmarks bar. On a Danske Spil match page, click it to bring that match's odds here.</p>
   </div>
 
   <div id="tab-matches" class="tabpane">
@@ -582,7 +582,7 @@ function bookmarkletCode() {
   // older version of the app still gets the current page.
   return "javascript:(()=>{const m=document.querySelector('main')||document.body;" +
     "const d={t:document.title,x:m.innerText.slice(0,30000)};" +
-    `window.open('${location.origin}/?v='+Date.now()+'#import='+encodeURIComponent(JSON.stringify(d)),'ninty-five');})()`;
+    `window.open('${location.origin}/?v='+Date.now()+'#import='+encodeURIComponent(JSON.stringify(d)),'ninety-five');})()`;
 }
 
 const toText = odds => Object.fromEntries(Object.entries(odds).map(([k, v]) => [k, num(v)]));

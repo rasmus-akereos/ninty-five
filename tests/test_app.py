@@ -8,11 +8,11 @@ with warnings.catch_warnings():  # starlette's httpx deprecation notice on impor
     warnings.simplefilter("ignore")
     from fastapi.testclient import TestClient
 
-from ninty_five import app as app_mod
-from ninty_five import service
-from ninty_five.history import HistoryStore
-from ninty_five.model import CLUB_PARAMS, DixonColes
-from ninty_five.store import BetStore
+from ninety_five import app as app_mod
+from ninety_five import service
+from ninety_five.history import HistoryStore
+from ninety_five.model import CLUB_PARAMS, DixonColes
+from ninety_five.store import BetStore
 
 
 def _model():
@@ -182,3 +182,8 @@ def test_board_keeps_european_only_flag(client, monkeypatch):
     board = {f["key"]: f for f in client.get("/api/fixtures").json()["fixtures"]}
     assert board["espn:2"]["european_only"] is True
     assert not board["espn:1"].get("european_only")
+
+
+def test_page_is_named_ninety_five(client):
+    html = client.get("/").text
+    assert "<title>ninety-five</title>" in html and "ninty" not in html

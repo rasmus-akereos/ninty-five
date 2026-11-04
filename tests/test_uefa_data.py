@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from ninty_five import data, uefa
+from ninety_five import data, uefa
 
 MAIN_HEADER = "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG\n"
 EXTRA_HEADER = "Country,League,Season,Date,Time,Home,Away,HG,AG,Res\n"
@@ -81,7 +81,7 @@ def test_country_teams_lists_recent_teams(fake_files):
 
 
 # ---------------------------------------------------------------- European results
-from ninty_five import intl_fixtures  # noqa: E402
+from ninety_five import intl_fixtures  # noqa: E402
 
 
 def ev(eid, date, home, away, status="STATUS_FULL_TIME", hs="1", as_="0", details=None, neutral=False):

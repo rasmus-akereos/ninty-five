@@ -1,4 +1,4 @@
-# ninty-five
+# ninety-five
 
 A small football betting tool. It fits a goal model to historical results,
 prices every common market, and compares those prices with the odds you type
@@ -11,13 +11,13 @@ It then shows the edge and a suggested stake, and keeps a log of your bets.
 python3 -m venv .venv            # Debian/Ubuntu: sudo apt install python3.X-venv (match your version)
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-ninty-five serve                 # open http://127.0.0.1:8000
+ninety-five serve                 # open http://127.0.0.1:8000
 ```
 
 Modern Linux distributions block `pip install` into the system Python
 (PEP 668, "externally-managed-environment"), so always install into a
 virtual environment. Run `source .venv/bin/activate` again in each new
-terminal before using `ninty-five`. If `venv` fails with "ensurepip is not
+terminal before using `ninety-five`. If `venv` fails with "ensurepip is not
 available", delete the half-created `.venv`, install the package it names
 (e.g. `python3.14-venv`) and retry, or use `uv venv` instead, which needs
 no extra system package.
@@ -65,12 +65,12 @@ trained on its divisions together so promoted and relegated clubs tell it how
 strong each division is. Check them with
 
 ```bash
-ninty-five validate            # walk-forward 1X2 log loss vs a home/draw/away baseline
+ninety-five validate            # walk-forward 1X2 log loss vs a home/draw/away baseline
 ```
 
 A league where the model doesn't beat the baseline (or that was never
 checked) shows a **model unproven** tag. If the board warns about an unknown
-team name, add it to `ALIASES` in `ninty_five/league_fixtures.py`.
+team name, add it to `ALIASES` in `ninety_five/league_fixtures.py`.
 
 ### Cups
 
@@ -81,7 +81,7 @@ divisions and the top two in Germany, Spain, Italy and France. A non-league
 or lower-division side is skipped. A finals venue marked neutral is priced
 without home advantage. Bets settle on the **90-minute score** (extra time and
 penalties don't count). If the board warns that a league club has no model
-team, add its ESPN name to `ALIASES` in `ninty_five/cup_fixtures.py`. The
+team, add its ESPN name to `ALIASES` in `ninety_five/cup_fixtures.py`. The
 Danish cup isn't covered: no free source carries it. The **Danish Superliga's** fixtures and results
 also come from ESPN, a week ahead (football-data.co.uk lists Danish fixtures
 too late); its model still trains on football-data.co.uk results.
@@ -108,10 +108,10 @@ ESPN's club names are matched to football-data.co.uk's carefully: a club in
 ESPN's list of a covered league matches within that country; any other club
 only matches a team strictly (every word equal) in a country ESPN doesn't
 list. A league club that can't be matched is left out, with a warning on the
-board; add it to `ALIASES` in `ninty_five/uefa.py`. `ninty-five uefa-names`
+board; add it to `ALIASES` in `ninety_five/uefa.py`. `ninety-five uefa-names`
 lists how every club was matched.
 
-`ninty-five validate --uefa` tests the model month by month from August 2024
+`ninety-five validate --uefa` tests the model month by month from August 2024
 and stores the result for the board. On 4 Nov 2026 (1X2 log loss, lower is
 better):
 
@@ -134,18 +134,18 @@ was off at 07:00, it fetches when the app starts (when the last fetch is over
 24 hours old). A failed fetch is retried every hour. The line above the
 matches shows when it last ran. A Refresh pressed during a fetch says
 "Refresh already running" instead of fetching twice. Switch it off with
-`NINTY_FIVE_SCHEDULER=0`.
+`NINETY_FIVE_SCHEDULER=0`.
 
 ### Danske Spil button
 
-Drag the **→ ninty-five** button at the top of the board to your browser's
+Drag the **→ ninety-five** button at the top of the board to your browser's
 bookmarks bar. On a Danske Spil match page (logged in or not), click it: it
 reads the prices shown on that page (1X2, over/under, both teams to score)
 and opens the app with that match folded open and the boxes filled in. It
 only reads the page you have open; nothing is sent to Danske Spil. If the
 match isn't on the board, it opens "Add a match" with the prices filled in.
 It reads the page's text, so a redesign of Danske Spil's match page may need
-an update to `ninty_five/import_odds.py`.
+an update to `ninety_five/import_odds.py`.
 
 ### History and track record
 
@@ -168,7 +168,7 @@ The first fetch downloads three seasons (~27 requests). The free tier allows
 season is refreshed, at most every 6 hours. For a morning list in the terminal:
 
 ```bash
-ninty-five fixtures --days 3
+ninety-five fixtures --days 3
 ```
 
 ### Matches not on the list
@@ -189,8 +189,8 @@ open the same way, with team pickers:
 Other commands:
 
 ```bash
-ninty-five ratings --dataset INTL --top 30   # team strength table
-ninty-five backtest --dataset INTL           # walk-forward model test
+ninety-five ratings --dataset INTL --top 30   # team strength table
+ninety-five backtest --dataset INTL           # walk-forward model test
 pytest
 ```
 
@@ -243,7 +243,7 @@ O/U 0.5–4.5 and BTTS.
 testing: refit every 6 months from 2023-01 to 2026-07 and score competitive
 matches in the next 6 months by 1X2 log loss. The surface is flat for a
 half-life of 3–4 years and κ ≤ 0.5. We use half-life 1095 days and κ = 0.2.
-Down-weighting friendlies did not help. Result (`ninty-five backtest`):
+Down-weighting friendlies did not help. Result (`ninety-five backtest`):
 
 | | 1X2 log loss |
 |---|---|

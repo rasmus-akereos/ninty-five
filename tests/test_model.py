@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ninty_five.model import DixonColes, markets, score_matrix, settle
+from ninety_five.model import DixonColes, markets, score_matrix, settle
 
 
 def synthetic(n_rounds=40, seed=0):

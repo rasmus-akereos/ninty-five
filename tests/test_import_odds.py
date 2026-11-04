@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ninty_five import import_odds
+from ninety_five import import_odds
 
 TEXT = (Path(__file__).parent / "data" / "danskespil_blackburn_stoke.txt").read_text()
 TITLE = "Blackburn - Stoke | England Championship Odds | Spil på kampen her"
@@ -73,7 +73,7 @@ def test_same_teams_twice_picks_the_next_match():
 
 
 def test_danish_club_names_match_the_board():
-    from ninty_five.import_odds import same_team
+    from ninety_five.import_odds import same_team
     assert same_team("FC København", "FC Copenhagen")
     assert same_team("AGF", "Aarhus")
     assert same_team("Brøndby", "Brondby") and same_team("Sønderjyske", "Sonderjyske")

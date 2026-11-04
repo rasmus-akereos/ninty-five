@@ -31,8 +31,8 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title="ninty-five", lifespan=lifespan)
-log = logging.getLogger("ninty_five")
+app = FastAPI(title="ninety-five", lifespan=lifespan)
+log = logging.getLogger("ninety_five")
 
 
 def get_model(dataset: str, refresh: bool = False) -> DixonColes:

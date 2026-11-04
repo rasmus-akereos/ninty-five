@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from ninty_five.history import HistoryStore
+from ninety_five.history import HistoryStore
 
 NOW = pd.Timestamp("2026-11-03T12:00Z")
 

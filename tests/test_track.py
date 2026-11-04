@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from ninty_five import track
+from ninety_five import track
 
 
 def _m(hg, ag, p, odds=None):

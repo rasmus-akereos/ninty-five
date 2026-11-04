@@ -1,6 +1,6 @@
 import pytest
 
-from ninty_five import data
+from ninety_five import data
 
 MAIN_HEADER = "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG\n"
 

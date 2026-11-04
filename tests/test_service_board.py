@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from ninty_five import service
+from ninety_five import service
 
 
 def _df(rows):
@@ -31,10 +31,10 @@ def test_with_min_odds():
 
 
 # ------------------------------------------------------------ lower leagues
-from ninty_five import fixtures, intl_fixtures, league_fixtures  # noqa: E402
-from ninty_five.history import HistoryStore  # noqa: E402
-from ninty_five.model import CLUB_PARAMS, DixonColes  # noqa: E402
-from ninty_five.store import BetStore  # noqa: E402
+from ninety_five import fixtures, intl_fixtures, league_fixtures  # noqa: E402
+from ninety_five.history import HistoryStore  # noqa: E402
+from ninety_five.model import CLUB_PARAMS, DixonColes  # noqa: E402
+from ninety_five.store import BetStore  # noqa: E402
 
 
 def _eng_model():
@@ -208,7 +208,7 @@ def test_run_refresh_refits_country_models(tmp_path, monkeypatch):
 
 
 def test_uefa_is_a_dataset_and_refits_daily(tmp_path, monkeypatch):
-    from ninty_five import uefa
+    from ninety_five import uefa
 
     db = tmp_path / "b.sqlite"
     h, bets = HistoryStore(db), BetStore(db)
@@ -245,7 +245,7 @@ def test_update_results_fdcu_ignores_earlier_meeting(tmp_path, monkeypatch):
 
 
 # --------------------------------------------------------------------- cups
-from ninty_five import cup_fixtures  # noqa: E402
+from ninety_five import cup_fixtures  # noqa: E402
 
 
 def test_cup_board_prices_with_country_model_and_passes_warnings(monkeypatch):
@@ -293,7 +293,7 @@ def test_update_results_settles_cup_bets_from_espn(tmp_path, monkeypatch):
 
 
 def test_run_refresh_failed_uefa_refit_warns_without_stale_name_warnings(tmp_path, monkeypatch):
-    from ninty_five import uefa
+    from ninety_five import uefa
 
     db = tmp_path / "b.sqlite"
     h, bets = HistoryStore(db), BetStore(db)

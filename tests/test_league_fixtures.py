@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from ninty_five import league_fixtures
+from ninety_five import league_fixtures
 
 DATA = Path(__file__).parent / "data"
 SAMPLE_MAIN = (DATA / "fdcu_fixtures.csv").read_bytes()

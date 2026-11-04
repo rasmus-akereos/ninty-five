@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from ninty_five import cup_fixtures, intl_fixtures, league_fixtures
+from ninety_five import cup_fixtures, intl_fixtures, league_fixtures
 
 NOW = pd.Timestamp("2026-11-05 12:00", tz="UTC")
 ENG_MODEL = ["Oxford", "Stevenage", "Leicester", "Sheffield Weds", "Oldham", "Wolves", "Bristol Rvs", "Cambridge"]

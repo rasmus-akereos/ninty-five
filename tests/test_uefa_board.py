@@ -3,10 +3,10 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from ninty_five import fixtures, intl_fixtures, service, uefa
-from ninty_five.history import HistoryStore
-from ninty_five.model import CLUB_PARAMS, DixonColes
-from ninty_five.store import BetStore
+from ninety_five import fixtures, intl_fixtures, service, uefa
+from ninety_five.history import HistoryStore
+from ninety_five.model import CLUB_PARAMS, DixonColes
+from ninety_five.store import BetStore
 
 NOW = pd.Timestamp("2026-11-04 12:00", tz="UTC")
 

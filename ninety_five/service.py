@@ -19,7 +19,7 @@ MODEL_TTL_SECONDS = 6 * 3600
 
 _models: dict[str, tuple[float, DixonColes, pd.DataFrame]] = {}
 _lock = threading.Lock()
-log = logging.getLogger("ninty_five")
+log = logging.getLogger("ninety_five")
 
 
 def datasets() -> dict[str, str]:

@@ -2,7 +2,7 @@ import threading
 
 import pandas as pd
 
-from ninty_five import scheduler, service
+from ninety_five import scheduler, service
 
 CPH = "Europe/Copenhagen"
 
@@ -43,7 +43,7 @@ def test_seven_is_copenhagen_across_dst():
 
 
 def test_start_disabled_by_env(monkeypatch):
-    monkeypatch.setenv("NINTY_FIVE_SCHEDULER", "0")
+    monkeypatch.setenv("NINETY_FIVE_SCHEDULER", "0")
     assert scheduler.start(None, None) is None
 
 
@@ -53,7 +53,7 @@ class FakeHistory:
 
 
 def test_loop_survives_failing_run(monkeypatch):
-    monkeypatch.setenv("NINTY_FIVE_SCHEDULER", "1")
+    monkeypatch.setenv("NINETY_FIVE_SCHEDULER", "1")
     calls = []
     done = threading.Event()
 

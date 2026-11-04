@@ -96,7 +96,7 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
 def _fetch(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "ninty-five/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "ninety-five/0.1"})
     with urllib.request.urlopen(req, timeout=60) as resp:
         return resp.read()
 

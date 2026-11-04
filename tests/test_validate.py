@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 
-from ninty_five import data, validate
-from ninty_five.history import HistoryStore
+from ninety_five import data, validate
+from ninety_five.history import HistoryStore
 
 
 def _two_divisions():
@@ -38,7 +38,7 @@ def test_validation_round_trip(tmp_path):
 
 
 # ---------------------------------------------------------------- UEFA model
-from ninty_five import uefa  # noqa: E402
+from ninety_five import uefa  # noqa: E402
 
 
 def test_unproven_judges_europa_rows():

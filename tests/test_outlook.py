@@ -1,6 +1,6 @@
 import pytest
 
-from ninty_five.store import BetStore, open_outlook, take_profit_above
+from ninety_five.store import BetStore, open_outlook, take_profit_above
 
 
 def _bet(stake, odds, p, home="A", away="B", market="1"):

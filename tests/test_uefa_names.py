@@ -1,7 +1,7 @@
 import pytest
 import pandas as pd
 
-from ninty_five import intl_fixtures, uefa
+from ninety_five import intl_fixtures, uefa
 
 TEAMS = {
     "BEL": ["Club Brugge", "Cercle Brugge", "Anderlecht"],

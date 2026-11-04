@@ -129,7 +129,7 @@ def print_uefa_names() -> None:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(prog="ninty-five")
+    p = argparse.ArgumentParser(prog="ninety-five")
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("serve", help="run the web app")
     s.add_argument("--host", default="127.0.0.1")
@@ -154,7 +154,7 @@ def main() -> None:
     if args.cmd == "serve":
         import uvicorn
 
-        uvicorn.run("ninty_five.app:app", host=args.host, port=args.port)
+        uvicorn.run("ninety_five.app:app", host=args.host, port=args.port)
     elif args.cmd == "ratings":
         from .service import fit_dataset
 

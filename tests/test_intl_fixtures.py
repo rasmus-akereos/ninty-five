@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from ninty_five import intl_fixtures, service
+from ninety_five import intl_fixtures, service
 
 SAMPLE = json.loads((Path(__file__).parent / "data" / "espn_scoreboard_sample.json").read_text())
 

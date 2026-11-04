@@ -5,7 +5,7 @@ current-season data are fetched. A background thread wakes every hour and
 asks `due()`; that also covers a machine that was off or asleep at 07:00
 (catch-up when the last fetch is over 24 hours old) and a failed run (still
 due at the next hourly check). No OS scheduler is involved, so the same code
-runs unchanged on a server. Set NINTY_FIVE_SCHEDULER=0 to switch it off.
+runs unchanged on a server. Set NINETY_FIVE_SCHEDULER=0 to switch it off.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from . import service
 RUN_AT = time(7, 0)
 TZ = ZoneInfo("Europe/Copenhagen")
 MAX_AGE = pd.Timedelta(hours=24)
-log = logging.getLogger("ninty_five")
+log = logging.getLogger("ninety_five")
 
 
 def _ts(v) -> pd.Timestamp | None:
@@ -42,7 +42,7 @@ def due(last_fetch: pd.Timestamp | None, last_auto: pd.Timestamp | None, now: pd
 
 def start(history, bets, days: int = 7, wake: float = 3600, stop: threading.Event | None = None) -> threading.Thread | None:
     """Start the daily-fetch thread (None when switched off)."""
-    if os.environ.get("NINTY_FIVE_SCHEDULER", "1") == "0":
+    if os.environ.get("NINETY_FIVE_SCHEDULER", "1") == "0":
         return None
     stop = stop or threading.Event()
 
@@ -60,6 +60,6 @@ def start(history, bets, days: int = 7, wake: float = 3600, stop: threading.Even
                 log.warning("daily fetch failed: %s", exc)
             stop.wait(wake)
 
-    t = threading.Thread(target=loop, name="ninty-five-daily-fetch", daemon=True)
+    t = threading.Thread(target=loop, name="ninety-five-daily-fetch", daemon=True)
     t.start()
     return t

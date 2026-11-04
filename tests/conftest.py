@@ -4,9 +4,9 @@ import pytest
 
 import pandas as pd
 
-from ninty_five import cup_fixtures, league_fixtures, uefa
+from ninety_five import cup_fixtures, league_fixtures, uefa
 
-os.environ.setdefault("NINTY_FIVE_SCHEDULER", "0")  # no daily-fetch thread in tests
+os.environ.setdefault("NINETY_FIVE_SCHEDULER", "0")  # no daily-fetch thread in tests
 
 EMPTY = {
     league_fixtures.FIXTURES_URL: b"Div,Date,Time,HomeTeam,AwayTeam\n",

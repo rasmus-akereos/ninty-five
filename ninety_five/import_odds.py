@@ -1,4 +1,4 @@
-"""Read odds from a Danske Spil match page (sent by the "→ ninty-five" bookmark)
+"""Read odds from a Danske Spil match page (sent by the "→ ninety-five" bookmark)
 and find the match on the board.
 
 The bookmark sends the page's visible text and title. Danske Spil's markup uses

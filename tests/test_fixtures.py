@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
-from ninty_five import fixtures, service
-from ninty_five.store import BetStore
+from ninety_five import fixtures, service
+from ninety_five.store import BetStore
 
 
 def _match(mid, date, home, away, hg=None, ag=None, status="FINISHED", stage="REGULAR_SEASON", code=None, rt=None):
@@ -101,8 +101,8 @@ def test_europe_board_and_auto_settle(monkeypatch, tmp_path):
 
 
 def test_update_results_settles_bets_by_key(tmp_path, monkeypatch):
-    from ninty_five import intl_fixtures
-    from ninty_five.history import HistoryStore
+    from ninety_five import intl_fixtures
+    from ninety_five.history import HistoryStore
 
     db = tmp_path / "b.sqlite"
     h, bets = HistoryStore(db), BetStore(db)
