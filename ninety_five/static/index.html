@@ -267,6 +267,10 @@ let openBets = [];  // open bets from the bet log, for the "Logged" state
 const sameMatch = (b, m) => b.match_key && m.key ? b.match_key === m.key
   : b.dataset === m.dataset && b.home === m.home && b.away === m.away;
 const openBetsFor = m => openBets.filter(b => sameMatch(b, m));
+const placedBadge = f => {
+  const mine = openBetsFor({ key: f.key, dataset: f.dataset || "EUROPE", home: f.home, away: f.away });
+  return mine.length ? `<span class="badge placed" title="${esc(mine.map(betLine).join(", "))}">bet placed</span>` : "";
+};
 const betLine = b => `${b.market} · ${num(b.stake, 0)} kr @ ${num(b.odds)}`;
 let evalSeq = 0;
 let teamSet = new Set(); // teams of the data set loaded into the manual picker
@@ -424,8 +428,7 @@ function matchCard(f) {
   const thinTip = f.european_only ? "Rated from European matches only: treat with caution" : "Few recent matches for one side: treat with caution";
   const thin = f.rated && (f.european_only || Math.min(...f.data_matches) < 10) ? `<span class="badge" title="${thinTip}">thin data</span>` : "";
   const unproven = f.unproven ? `<span class="badge" title="${esc(unprovenTip(f.unproven))}">model unproven</span>` : "";
-  const mine = openBetsFor({ key: f.key, dataset: f.dataset || "EUROPE", home: f.home, away: f.away });
-  const placed = mine.length ? `<span class="badge placed" title="${esc(mine.map(betLine).join(", "))}">bet placed</span>` : "";
+  const placed = `<span class="placed-slot">${placedBadge(f)}</span>`;
   const form = f.form || { home: [], away: [] };
   const prices = f.rated
     ? BOARD_COLS.map(m => `<div class="pill"><small>${PILL_LABELS[m]}</small>${num(f.min_odds[m])}</div>`).join("")
@@ -598,6 +601,9 @@ function renderResult(r) {
     ${notes.map(n => `<div class="note">${esc(n)}</div>`).join("")}
     ${sel}`;
   $("f-result").querySelectorAll("[data-log]").forEach(b => b.onclick = () => logBet(r.selections[+b.dataset.log], b));
+  $("f-result").querySelectorAll("[data-stake]").forEach(inp => inp.oninput = () => {
+    (open.stakes = open.stakes || {})[r.selections[+inp.dataset.stake].market] = inp.value;
+  });
 }
 
 async function loadTeams(ds) {
@@ -693,7 +699,7 @@ function logCell(s, i, mine) {
   const had = mine.find(b => b.market === s.market);
   if (had) return `<span class="logged">Logged · ${num(had.stake, 0)} kr @ ${num(had.odds)}</span>`;
   if (!s.recommended) return "";
-  return `<span class="logbox"><input data-stake="${i}" inputmode="decimal" autocomplete="off" value="${num(s.stake, 0)}" aria-label="Stake (kr)"><button class="small" data-log="${i}">Log</button></span>`;
+  return `<span class="logbox"><input data-stake="${i}" inputmode="decimal" autocomplete="off" value="${esc(open.stakes && open.stakes[s.market] != null ? open.stakes[s.market] : num(s.stake, 0))}" aria-label="Stake (kr)"><button class="small" data-log="${i}">Log</button></span>`;
 }
 
 async function logBet(s, btn) {
@@ -709,11 +715,17 @@ async function logBet(s, btn) {
       ...(f ? { match_id: f.match_id, kickoff: f.kickoff, match_key: f.key } : {}) }) });
   } catch (e) {
     btn.disabled = false;
-    await loadBets();  // a 409 means another tab logged it: show it as Logged
-    if ($("f-lognote")) $("f-lognote").innerHTML = `<div class="note">${esc(e.message)}</div>`;
+    const dup = e.message.startsWith("Already logged");
+    const msg = dup ? e.message : `Not logged: couldn't reach ninety-five (${e.message}). Check the connection and press Log again.`;
+    if ($("f-lognote")) $("f-lognote").innerHTML = `<div class="note">${esc(msg)}</div>`;
+    if (dup) {  // another tab logged it: show it as Logged, keep the message
+      await loadBets().catch(() => {});
+      if ($("f-lognote")) $("f-lognote").innerHTML = `<div class="note">${esc(msg)}</div>`;
+    }
     return;
   }
-  loadBets();
+  if (open && open.stakes) delete open.stakes[s.market];
+  loadBets().catch(() => {});
 }
 
 async function settle(id) {
@@ -750,10 +762,27 @@ const kickoffLabel = iso => {
   return `${t.toLocaleDateString([], { weekday: "short" })} ${t.getDate()}/${t.getMonth() + 1} ${hhmm(iso)}`;
 };
 
+// Show logged state without redrawing the board, so typed stakes and odds,
+// focus, open "More markets" and the chips' scroll survive (loadBets runs on
+// every return to the page).
+function refreshLogged() {
+  document.querySelectorAll("#board .match[data-key]").forEach(el => {
+    const f = board.find(x => x.key === el.dataset.key), slot = el.querySelector(".placed-slot");
+    if (f && slot) slot.innerHTML = placedBadge(f);
+  });
+  if (open && open.result && $("f-result")) {
+    const a = document.activeElement, st = a && a.dataset ? a.dataset.stake : null;
+    const caret = st != null && typeof a.selectionStart === "number" ? a.selectionStart : null;
+    renderResult(open.result);
+    const again = st != null ? $("f-result").querySelector(`[data-stake="${st}"]`) : null;
+    if (again) { again.focus(); if (caret != null) try { again.setSelectionRange(caret, caret); } catch {} }
+  }
+}
+
 async function loadBets() {
   const { bets, summary: s } = await api("/api/bets");
   openBets = bets.filter(b => b.status === "open");
-  renderBoard();
+  refreshLogged();
   $("kpis").innerHTML = [
     ["Bets", `${s.n_bets} (${s.n_open} open)`],
     ["Staked", `${num(s.staked + s.open_staked, 0)} kr <small class="muted">(${num(s.open_staked, 0)} open)</small>`],
