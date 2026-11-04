@@ -108,6 +108,10 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
 .prices { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .pill { min-width: 54px; text-align: center; background: var(--raised); border-radius: 10px; padding: 4px 8px; font-variant-numeric: tabular-nums; font-weight: 600; }
 .pill small { display: block; font-size: 10px; color: var(--muted); font-weight: 500; }
+.badge.placed { background: var(--good-bg); color: var(--good); }
+.logged { color: var(--good); font-weight: 600; font-size: 12px; }
+.logbox { display: inline-flex; gap: 4px; align-items: center; }
+.logbox input { width: 5em; padding: 4px 6px; text-align: right; }
 .unrated { color: var(--faint); font-size: 12px; }
 .add .mrow { color: var(--accent); font-weight: 600; justify-content: center; }
 .empty { color: var(--muted); text-align: center; padding: 24px; }
@@ -233,6 +237,13 @@ let datasets = {};
 let league = store.get("league") || "All";
 // The match currently folded open: { key, fixture|null, dataset, home, away, neutral, result }
 let open = null;
+let openBets = [];  // open bets from the bet log, for the "Logged" state
+// Same match as the server's duplicate rule: same match key when both have one,
+// else same data set and teams.
+const sameMatch = (b, m) => b.match_key && m.key ? b.match_key === m.key
+  : b.dataset === m.dataset && b.home === m.home && b.away === m.away;
+const openBetsFor = m => openBets.filter(b => sameMatch(b, m));
+const betLine = b => `${b.market} · ${num(b.stake, 0)} kr @ ${num(b.odds)}`;
 let evalSeq = 0;
 let teamSet = new Set(); // teams of the data set loaded into the manual picker
 
@@ -389,6 +400,8 @@ function matchCard(f) {
   const thinTip = f.european_only ? "Rated from European matches only: treat with caution" : "Few recent matches for one side: treat with caution";
   const thin = f.rated && (f.european_only || Math.min(...f.data_matches) < 10) ? `<span class="badge" title="${thinTip}">thin data</span>` : "";
   const unproven = f.unproven ? `<span class="badge" title="${esc(unprovenTip(f.unproven))}">model unproven</span>` : "";
+  const mine = openBetsFor({ key: f.key, dataset: f.dataset || "EUROPE", home: f.home, away: f.away });
+  const placed = mine.length ? `<span class="badge placed" title="${esc(mine.map(betLine).join(", "))}">bet placed</span>` : "";
   const form = f.form || { home: [], away: [] };
   const prices = f.rated
     ? BOARD_COLS.map(m => `<div class="pill"><small>${PILL_LABELS[m]}</small>${num(f.min_odds[m])}</div>`).join("")
@@ -399,7 +412,7 @@ function matchCard(f) {
       <div class="teams">
         <div class="team"><span class="name">${esc(f.home)}</span>${dots(f.home, form.home)}</div>
         <div class="team"><span class="name">${esc(f.away)}</span>${dots(f.away, form.away)}</div>
-        <div class="meta">${esc(f.detail || f.competition)}${f.neutral ? " · neutral venue" : ""} ${thin} ${unproven}</div>
+        <div class="meta">${esc(f.detail || f.competition)}${f.neutral ? " · neutral venue" : ""} ${thin} ${unproven} ${placed}</div>
       </div>
       <div class="prices">${prices}</div>
     </div>${isOpen ? foldRow() : ""}</div>`;
@@ -543,6 +556,8 @@ function renderResult(r) {
   if (Math.min(nh, na) < 15) notes.push(`Thin data: ${Math.round(Math.min(nh, na))} recent matches for one side. Treat with caution.`);
   for (const [k, v] of Object.entries(r.margins)) notes.push(`Bookmaker margin ${k}: ${pct(v)}. This is what the model has to beat.`);
   if (r.selections.some(s => s.p_market == null)) notes.push("Rows without a market probability come from an incomplete market (enter every outcome to strip the margin). They use the model only and are less reliable.");
+  const mine = openBetsFor({ key: open && open.fixture ? open.fixture.key : null, dataset: open ? open.dataset : null, home: r.home, away: r.away });
+  if (mine.length) notes.push(`Your open bets on this match: ${mine.map(betLine).join(", ")}.`);
   const sel = r.selections.length ? `<div class="scroll"><table>
       <tr><th>Selection</th><th>Odds</th><th>Model</th><th>Market (no margin)</th><th>Blend</th><th>Fair odds</th><th>EV</th><th>Stake</th><th></th></tr>
       ${r.selections.map((s, i) => `<tr class="${s.recommended ? "rec" : ""}">
@@ -550,15 +565,15 @@ function renderResult(r) {
         <td>${pct(s.p_blend)}</td><td>${num(s.fair_odds)}</td>
         <td class="${s.ev >= 0 ? "pos" : "neg"}">${pct(s.ev)}</td>
         <td>${s.recommended ? num(s.stake, 0) + " kr" : "–"}</td>
-        <td>${s.recommended ? `<button class="small" data-log="${i}">Log bet</button>` : ""}</td></tr>`).join("")}
-    </table></div>` : `<p class="muted">Type Danske Spil odds above. A box turns green when the price is worth betting. Enter every outcome of a market for an honest edge.</p>`;
+        <td>${logCell(s, i, mine)}</td></tr>`).join("")}
+    </table></div><div id="f-lognote"></div>` : `<p class="muted">Type Danske Spil odds above. A box turns green when the price is worth betting. Enter every outcome of a market for an honest edge.</p>`;
   $("f-result").innerHTML = `
     <p><b>${esc(r.home)}</b> ${num(r.xg[0])} – ${num(r.xg[1])} <b>${esc(r.away)}</b> <span class="muted">expected goals ·
       1 ${pct(r.probabilities["1"])} · X ${pct(r.probabilities["X"])} · 2 ${pct(r.probabilities["2"])} ·
       likely ${r.top_scores.slice(0, 3).map(s => s.score).join(", ")}</span></p>
     ${notes.map(n => `<div class="note">${esc(n)}</div>`).join("")}
     ${sel}`;
-  $("f-result").querySelectorAll("[data-log]").forEach(b => b.onclick = () => logBet(r.selections[+b.dataset.log]));
+  $("f-result").querySelectorAll("[data-log]").forEach(b => b.onclick = () => logBet(r.selections[+b.dataset.log], b));
 }
 
 async function loadTeams(ds) {
@@ -650,16 +665,30 @@ async function loadTrack() {
 }
 
 // --------------------------------------------------------------- bet log
-async function logBet(s) {
+function logCell(s, i, mine) {
+  const had = mine.find(b => b.market === s.market);
+  if (had) return `<span class="logged">Logged · ${num(had.stake, 0)} kr @ ${num(had.odds)}</span>`;
+  if (!s.recommended) return "";
+  return `<span class="logbox"><input data-stake="${i}" inputmode="decimal" autocomplete="off" value="${num(s.stake, 0)}" aria-label="Stake (kr)"><button class="small" data-log="${i}">Log</button></span>`;
+}
+
+async function logBet(s, btn) {
   const target = open, f = target.fixture;
-  const stake = prompt(`Stake for ${s.market} @ ${s.odds}`, s.stake);
-  if (!stake) return;
+  const note = $("f-lognote");
+  const stake = parseFloat(String($("f-result").querySelector(`[data-stake="${btn.dataset.log}"]`).value).replace(",", "."));
+  if (!(stake > 0)) { note.innerHTML = `<div class="note">Enter a stake above 0.</div>`; return; }
+  btn.disabled = true;
   try {
     await api("/api/bets", { method: "POST", body: JSON.stringify({
       dataset: target.dataset, home: target.result.home, away: target.result.away, market: s.market, odds: s.odds,
-      stake: parseFloat(stake.replace(",", ".")), p_model: s.p_model, p_blend: s.p_blend, ev: s.ev,
+      stake, p_model: s.p_model, p_blend: s.p_blend, ev: s.ev,
       ...(f ? { match_id: f.match_id, kickoff: f.kickoff, match_key: f.key } : {}) }) });
-  } catch (e) { alert(e.message); return; }
+  } catch (e) {
+    btn.disabled = false;
+    await loadBets();  // a 409 means another tab logged it: show it as Logged
+    if ($("f-lognote")) $("f-lognote").innerHTML = `<div class="note">${esc(e.message)}</div>`;
+    return;
+  }
   loadBets();
 }
 
@@ -692,6 +721,8 @@ async function del(id) {
 
 async function loadBets() {
   const { bets, summary: s } = await api("/api/bets");
+  openBets = bets.filter(b => b.status === "open");
+  renderBoard();
   $("kpis").innerHTML = [
     ["Bets", `${s.n_bets} (${s.n_open} open)`],
     ["Staked", `${num(s.staked + s.open_staked, 0)} kr <small class="muted">(${num(s.open_staked, 0)} open)</small>`],
