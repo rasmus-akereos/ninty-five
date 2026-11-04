@@ -342,7 +342,7 @@ class HistoryStore:
             for m in c.execute(sql, args).fetchall():
                 kickoff = pd.Timestamp(m["kickoff"])
                 snaps = c.execute(
-                    "SELECT taken_at, probabilities FROM snapshots WHERE match_key = ? ORDER BY id", (m["key"],)
+                    "SELECT taken_at, probabilities, xg FROM snapshots WHERE match_key = ? ORDER BY id", (m["key"],)
                 ).fetchall()
                 before = [s for s in snaps if pd.Timestamp(s["taken_at"]) < kickoff]
                 if not before:
@@ -358,5 +358,6 @@ class HistoryStore:
                     "detail": m["detail"], "kickoff": m["kickoff"], "home": m["home"], "away": m["away"],
                     "hg": m["home_goals"], "ag": m["away_goals"],
                     "probabilities": json.loads(before[-1]["probabilities"]), "odds": odds,
+                    "xg": json.loads(before[-1]["xg"]) if before[-1]["xg"] else None,
                 })
         return sorted(out, key=lambda x: pd.Timestamp(x["kickoff"]), reverse=True)

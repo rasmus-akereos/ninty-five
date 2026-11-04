@@ -179,3 +179,10 @@ def test_finished_meeting_is_not_reused(tmp_path):
     h.set_result("fdcu:E2:2026-11-04:Oxford:Reading", 1, 0, "FINISHED")
     h.save_board([_fdcu("fdcu:E2:2026-11-25:Oxford:Reading", "2026-11-25T19:45:00+00:00")], "2026-11-22T07:00:00+00:00")
     assert h.match("fdcu:E2:2026-11-25:Oxford:Reading") is not None
+
+
+def test_finished_includes_xg(tmp_path):
+    h = HistoryStore(tmp_path / "h.sqlite")
+    h.save_board([_row(kickoff="2026-11-03T20:00:00+00:00")], "2026-11-03T10:00:00+00:00")
+    h.set_result("fd:1", 1, 0, "FINISHED")
+    assert h.finished()[0]["xg"] == [1.2, 1.0]

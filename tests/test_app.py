@@ -211,3 +211,7 @@ def test_stats_betting_uses_competition(client):
     open_ = client.get("/api/stats/betting").json()
     assert open_["tiles"]["n_open"] == 1
     assert app_mod.history.competitions() == {"fd:1": "England 2"}
+
+
+def test_stats_model_endpoint(client):
+    assert client.get("/api/stats/model").json() == {"teams": [], "leagues": []}

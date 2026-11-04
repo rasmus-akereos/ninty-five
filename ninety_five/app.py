@@ -184,6 +184,11 @@ def stats_betting() -> dict:
     return stats.betting(store.list(), history.competitions())
 
 
+@app.get("/api/stats/model")
+def stats_model() -> dict:
+    return stats.model_insight(history.finished())
+
+
 @app.get("/api/teams")
 def teams(dataset: str = "INTL") -> dict:
     m = get_model(dataset)

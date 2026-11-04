@@ -7,12 +7,16 @@ can fade them instead of letting five bets look like a pattern."""
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+from . import track
 
 TZ = ZoneInfo("Europe/Copenhagen")
 SETTLED = ("won", "lost", "took profit")
 THIN_BETS = 10
+THIN_TEAM = 15  # matches before a team can be flagged
 
 
 def _day(iso: str) -> str:
@@ -103,3 +107,71 @@ def betting(bets: list[dict], competitions: dict[str, str]) -> dict:
         "by_market": _groups(settled, lambda b: market_group(b["market"])),
         "by_odds": _groups(settled, lambda b: odds_band(b["odds"])),
     }
+
+
+# ------------------------------------------------------------ model insight
+def _points(p_win: float, p_draw: float) -> tuple[float, float]:
+    """Expected points and their variance for one match (win 3, draw 1)."""
+    e = 3 * p_win + p_draw
+    return e, 9 * p_win + p_draw - e * e
+
+
+def model_insight(matches: list[dict]) -> dict:
+    """matches: HistoryStore.finished() rows. Per team: expected points (from
+    the model's pre-kick-off 1X2) against actual, and xG against goals; a team
+    is flagged only when the gap is beyond two standard deviations and it has
+    at least THIN_TEAM matches. Per league: the same for home sides, plus the
+    track-record comparison with Danske Spil."""
+    teams: dict[str, dict] = {}
+    leagues: dict[str, list[dict]] = {}
+
+    def team(name: str) -> dict:
+        return teams.setdefault(name, {"team": name, "n": 0, "exp_pts": 0.0, "pts": 0, "var": 0.0,
+                                       "xg_for": 0.0, "goals_for": 0, "xg_against": 0.0, "goals_against": 0})
+
+    for m in matches:
+        p = m["probabilities"]
+        if not all(k in p for k in ("1", "X", "2")):
+            continue
+        leagues.setdefault(m["competition"], []).append(m)
+        hg, ag = m["hg"], m["ag"]
+        for side, pw, gf, ga, i in (("home", p["1"], hg, ag, 0), ("away", p["2"], ag, hg, 1)):
+            t = team(m[side])
+            e, v = _points(pw, p["X"])
+            t["n"] += 1
+            t["exp_pts"] += e
+            t["var"] += v
+            t["pts"] += 3 if gf > ga else 1 if gf == ga else 0
+            if m.get("xg"):
+                t["xg_for"] += m["xg"][i]
+                t["xg_against"] += m["xg"][1 - i]
+                t["goals_for"] += gf
+                t["goals_against"] += ga
+
+    rows = []
+    for t in teams.values():
+        sd = math.sqrt(max(t.pop("var"), 0.0))
+        gap = t["pts"] - t["exp_pts"]
+        if t["n"] < THIN_TEAM:
+            verdict = "too few"
+        elif gap < -2 * sd:
+            verdict = "overrates"
+        elif gap > 2 * sd:
+            verdict = "underrates"
+        else:
+            verdict = "in line"
+        rows.append({**t, "exp_pts": round(t["exp_pts"], 2), "sd": round(sd, 3),
+                     "xg_for": round(t["xg_for"], 2), "xg_against": round(t["xg_against"], 2),
+                     "verdict": verdict, "_z": abs(gap) / sd if sd else 0.0})
+    rows.sort(key=lambda r: (-r["_z"], r["team"]))
+    for r in rows:
+        del r["_z"]
+
+    league_rows = []
+    for comp, ms in leagues.items():
+        exp = sum(_points(m["probabilities"]["1"], m["probabilities"]["X"])[0] for m in ms)
+        pts = sum(3 if m["hg"] > m["ag"] else 1 if m["hg"] == m["ag"] else 0 for m in ms)
+        league_rows.append({"competition": comp, "n": len(ms), "exp_pts_home": round(exp, 2), "pts_home": pts,
+                            "track": track._group_summary("1X2", ms)})
+    league_rows.sort(key=lambda r: (-r["n"], r["competition"]))
+    return {"teams": rows, "leagues": league_rows}
