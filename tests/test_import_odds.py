@@ -77,3 +77,22 @@ def test_danish_club_names_match_the_board():
     assert same_team("FC København", "FC Copenhagen")
     assert same_team("AGF", "Aarhus")
     assert same_team("Brøndby", "Brondby") and same_team("Sønderjyske", "Sonderjyske")
+
+
+def test_danske_spil_names_match_european_board_names():
+    """Europa/Conference League rows use football-data.co.uk's short names
+    ("Betis", "Gent") or ESPN's ("Red Star Belgrade") for European-only clubs."""
+    pairs = [("Real Betis", "Betis"), ("Real Sociedad", "Sociedad"), ("KAA Gent", "Gent"),
+             ("NEC Nijmegen", "Nijmegen"), ("Legia Warszawa", "Legia"), ("Rapid Wien", "SK Rapid"),
+             ("Sporting Lissabon", "Sp Lisbon"), ("Sporting CP", "Sp Lisbon"), ("Eintracht Frankfurt", "Ein Frankfurt"),
+             ("Athletic Bilbao", "Ath Bilbao"), ("Union Saint-Gilloise", "St. Gilloise"),
+             ("Crvena Zvezda", "Red Star Belgrade"), ("Istanbul Basaksehir", "Buyuksehyr"),
+             ("Nottingham Forest", "Nott'm Forest"), ("Sparta Prag", "Sparta Prague"), ("FC Midtjylland", "Midtjylland")]
+    misses = [(ds, b) for ds, b in pairs if not import_odds.find_match(ds, "Celtic", [
+        {"home": b, "away": "Celtic", "kickoff": "2026-11-05T20:00:00+00:00"}])]
+    assert misses == []
+
+
+def test_short_board_name_inside_longer_name_still_needs_both_teams():
+    board = [{"home": "Gent", "away": "Ajax", "kickoff": "1"}, {"home": "Genk", "away": "PSV", "kickoff": "1"}]
+    assert import_odds.find_match("KAA Gent", "Ajax Amsterdam", board)["home"] == "Gent"

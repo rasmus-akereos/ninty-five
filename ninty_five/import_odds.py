@@ -44,7 +44,9 @@ DANISH_COUNTRIES = {
     "new zealand": "new zealand", "jamaica": "jamaica", "haiti": "haiti",
 }
 # Danish club names on Danske Spil -> the model's (football-data.co.uk) names
-DANISH_CLUBS = {"koebenhavn": "copenhagen", "agf": "aarhus"}
+# (word by word; also used for the Europa and Conference League names)
+DANISH_CLUBS = {"koebenhavn": "copenhagen", "agf": "aarhus", "crvena": "red", "zvezda": "star",
+                "basaksehir": "buyuksehyr", "saint": "st", "cp": "lisbon"}  # Sporting CP = Sp Lisbon
 STOPWORDS = {"fc", "afc", "cf", "sk", "kv", "sc", "ac", "as", "fk", "club", "de", "the", "cd", "sv", "vfb", "vfl", "ss"}
 
 
@@ -105,16 +107,22 @@ def _shares_word(danskespil: str, board: str) -> bool:
     return any(_word_match(t, b) for t in _tokens(danskespil) if t not in COMMON_WORDS for b in bd)
 
 
+def _same(danskespil: str, board: str) -> bool:
+    """same_team either way round: the board's short football-data.co.uk names
+    ("Betis", "Gent") sit inside Danske Spil's longer ones ("Real Betis")."""
+    return same_team(danskespil, board) or same_team(board, danskespil)
+
+
 def find_match(home: str, away: str, board: list[dict]) -> dict | None:
     """The board match for a Danske Spil match: both teams matching, or failing
     that, one team matching and the other sharing a word (Danske Spil uses some
     Danish club names, e.g. "Sporting Lissabon" for Sporting Clube de Portugal).
     Only a single unambiguous match counts."""
-    both = [m for m in board if same_team(home, m["home"]) and same_team(away, m["away"])]
+    both = [m for m in board if _same(home, m["home"]) and _same(away, m["away"])]
     if not both:
         both = [m for m in board
-                if (same_team(home, m["home"]) and _shares_word(away, m["away"]))
-                or (same_team(away, m["away"]) and _shares_word(home, m["home"]))]
+                if (_same(home, m["home"]) and _shares_word(away, m["away"]))
+                or (_same(away, m["away"]) and _shares_word(home, m["home"]))]
     # The same two teams can meet twice in the window (e.g. two friendlies):
     # take the next one. Different pairs of teams are ambiguous.
     if len({(m["home"], m["away"]) for m in both}) != 1:

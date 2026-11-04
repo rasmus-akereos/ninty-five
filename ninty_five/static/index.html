@@ -386,7 +386,8 @@ function matchCard(f) {
   const t = new Date(f.kickoff);
   const hhmmK = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   const wd = t.toLocaleDateString([], { weekday: "short" });
-  const thin = f.rated && Math.min(...f.data_matches) < 10 ? `<span class="badge" title="Few recent matches for one side: treat with caution">thin data</span>` : "";
+  const thinTip = f.european_only ? "Rated from European matches only: treat with caution" : "Few recent matches for one side: treat with caution";
+  const thin = f.rated && (f.european_only || Math.min(...f.data_matches) < 10) ? `<span class="badge" title="${thinTip}">thin data</span>` : "";
   const unproven = f.unproven ? `<span class="badge" title="${esc(unprovenTip(f.unproven))}">model unproven</span>` : "";
   const form = f.form || { home: [], away: [] };
   const prices = f.rated

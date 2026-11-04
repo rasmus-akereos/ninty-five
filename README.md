@@ -86,6 +86,46 @@ Danish cup isn't covered: no free source carries it. The **Danish Superliga's** 
 also come from ESPN, a week ahead (football-data.co.uk lists Danish fixtures
 too late); its model still trains on football-data.co.uk results.
 
+### Europa League and Conference League
+
+Fixtures and results come from ESPN (no key); bets settle on the 90-minute
+score. They are priced by their own model, data set `UEFA`, trained on three
+seasons of:
+
+- the top flight of 20 countries from football-data.co.uk (England, Germany,
+  Spain, Italy, France, Netherlands, Portugal, Belgium, Scotland, Turkey,
+  Greece, Austria, Switzerland, Denmark, Norway, Sweden, Poland, Romania,
+  Ireland, Finland), and
+- every Champions, Europa and Conference League match, qualifiers included
+  (ESPN), which ties the leagues' strengths together.
+
+Clubs from other countries (Czechia, Croatia, Serbia, Hungary, Cyprus, ...)
+are rated from their European matches alone. Their matches carry a **thin
+data** badge ("Rated from European matches only"). One with fewer than 10
+European matches is left off the board.
+
+ESPN's club names are matched to football-data.co.uk's carefully: a club in
+ESPN's list of a covered league matches within that country; any other club
+only matches a team strictly (every word equal) in a country ESPN doesn't
+list. A league club that can't be matched is left out, with a warning on the
+board; add it to `ALIASES` in `ninty_five/uefa.py`. `ninty-five uefa-names`
+lists how every club was matched.
+
+`ninty-five validate --uefa` tests the model month by month from August 2024
+and stores the result for the board. On 4 Nov 2026 (1X2 log loss, lower is
+better):
+
+| Matches | Model | Baseline | Matches scored |
+|---|---|---|---|
+| Europa + Conference League, both clubs with domestic data | 0.965 | 1.019 | 411 |
+| Europa League, a thin-data club | 0.960 | 1.065 | 139 |
+| Conference League, a thin-data club | 0.978 | 1.045 | 219 |
+| Champions League | 0.942 | 1.008 | 357 |
+
+On Champions League matches since August 2025 it also beat the `EUROPE` model
+that prices the Champions League on the board (0.896 vs 0.939). The Champions
+League still uses `EUROPE`.
+
 ### Daily fetch
 
 While the app runs it fetches the board, results and the lower leagues'
