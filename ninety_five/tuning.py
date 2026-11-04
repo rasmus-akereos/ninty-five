@@ -169,3 +169,126 @@ def overview(history) -> dict:
     progress.append(prog("half_life", "club", None, None))
     return {"settings": settings, "progress": progress, "log": history.tuning_log(50),
             "deferred": ["Team corrections"]}
+
+
+# --------------------------------------------------------------- half-life
+HL_BOUNDS = (180.0, 1095.0)
+HL_FACTOR = 1.5
+HL_MONTHS = 6
+HL_EVERY_DAYS = 30
+TUNING_LEASE_TTL_HOURS = 3
+
+
+def half_life_candidates(current: float) -> list[float]:
+    """One step down, the current value, one step up — within bounds, whole days."""
+    raw = (current / HL_FACTOR, current, current * HL_FACTOR)
+    return sorted({float(round(min(max(h, HL_BOUNDS[0]), HL_BOUNDS[1]))) for h in raw})
+
+
+def decide_half_life(losses: dict[float, np.ndarray], kickoffs: np.ndarray, current: float) -> Decision:
+    """losses[h]: per-match walk-forward 1X2 losses with half-life h, aligned
+    with kickoffs (NaN where a team was unknown). Same rule as alpha."""
+    current = float(round(current))
+    keep = ~np.any([np.isnan(v) for v in losses.values()], axis=0)
+    order = np.argsort(kickoffs[keep], kind="stable")
+    ls = {h: v[keep][order] for h, v in losses.items()}
+    n = int(keep.sum())
+    if n < 2:
+        return Decision("half_life", "club", current, current, "waiting", n, note="no walk-forward matches")
+    cut = int(round(n * (1 - CONFIRM_SHARE)))
+    best = min(ls, key=lambda h: ls[h][:cut].mean())
+    old_l = ls[current][cut:]
+    if best == current:
+        return Decision("half_life", "club", current, current, "kept", n, float(old_l.mean()), float(old_l.mean()),
+                        0.0, note=f"best on older matches: {best:.0f} days")
+    new_l = ls[best][cut:]
+    ok, _, se = confirm(old_l, new_l)
+    return Decision("half_life", "club", current, best if ok else current, "changed" if ok else "kept", n,
+                    float(old_l.mean()), float(new_l.mean()), se, note=f"candidate {best:.0f} days")
+
+
+def half_life_losses(current: float, months: int = HL_MONTHS) -> tuple[dict[float, np.ndarray], np.ndarray]:
+    """Walk-forward over every club country data set for the last `months`
+    monthly cuts: refit with each candidate half-life on results up to the cut
+    and score the next month. Slow (minutes); runs at most monthly."""
+    import pandas as pd
+
+    from . import data
+    from .model import CLUB_PARAMS, DixonColes, match_losses_1x2
+    from .validate import _groups_until
+
+    cands = half_life_candidates(current)
+    losses: dict[float, list[np.ndarray]] = {h: [] for h in cands}
+    kicks: list[np.ndarray] = []
+    for key in data.COUNTRIES:
+        df, groups = data.load_country(key)
+        end = df["date"].max()
+        for cut in pd.date_range(end - pd.DateOffset(months=months), end, freq="MS"):
+            train = df[df["date"] <= cut]
+            window = df[(df["date"] > cut) & (df["date"] <= cut + pd.DateOffset(months=1))]
+            if window.empty or train.empty:
+                continue
+            g = _groups_until(train) if groups else None
+            for h in cands:
+                m = DixonColes(**{**CLUB_PARAMS, "half_life_days": h}).fit(train, as_of=cut, groups=g)
+                losses[h].append(match_losses_1x2(m, window))
+            kicks.append(window["date"].astype(str).to_numpy())
+    if not kicks:
+        return {h: np.array([]) for h in cands}, np.array([])
+    return {h: np.concatenate(v) for h, v in losses.items()}, np.concatenate(kicks)
+
+
+def run_half_life(history, now) -> Decision | None:
+    """Monthly: test the club half-life against one step either side."""
+    import pandas as pd
+
+    from . import service
+
+    if history.blocked("half_life", "club", now):
+        return None
+    last = [r for r in (history.last_tuning("half_life", "club", action=a) for a in ("changed", "kept")) if r]
+    if last and now - max(pd.Timestamp(r["at"]) for r in last) < pd.Timedelta(days=HL_EVERY_DAYS):
+        return None
+    from .model import CLUB_PARAMS
+    current = history.tuned().get(("half_life", "club"), CLUB_PARAMS["half_life_days"])
+    losses, kicks = half_life_losses(current)
+    d = decide_half_life(losses, kicks, current)
+    _apply(history, d, now)
+    if d.action == "changed":
+        service.set_club_half_life(d.new)
+    return d
+
+
+def run_all(history, now) -> list[Decision]:
+    """The daily tuning run (after the morning refresh). Never raises: a
+    failure is logged and the rest of the day carries on with old settings."""
+    import logging
+    import uuid
+
+    import pandas as pd
+
+    log = logging.getLogger("ninety_five")
+    holder = f"tuning-{uuid.uuid4().hex[:8]}"
+    if not history.take_lease("tuning", holder, now, ttl=pd.Timedelta(hours=TUNING_LEASE_TTL_HOURS)):
+        return []
+    out: list[Decision] = []
+    try:
+        for step in (run_alpha, run_half_life):  # independent: one failing doesn't stop the other
+            try:
+                got = step(history, now)
+            except Exception as exc:
+                log.warning("tuning (%s) failed: %s", step.__name__, exc)
+                continue
+            out += got if isinstance(got, list) else [got] if got is not None else []
+    finally:
+        history.release_lease("tuning", holder)
+    return out
+
+
+def apply_stored(history) -> None:
+    """At start-up: put a tuned club half-life back into use."""
+    from . import service
+
+    hl = history.tuned().get(("half_life", "club"))
+    if hl is not None:
+        service.set_club_half_life(hl)

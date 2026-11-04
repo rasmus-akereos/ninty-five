@@ -282,15 +282,22 @@ def settle(market: str, hg: int, ag: int) -> bool | None:
     return None
 
 
-def log_loss_1x2(model: DixonColes, df: pd.DataFrame) -> float:
-    """Mean multiclass log loss of 1X2 predictions on matches in df."""
+def match_losses_1x2(model: DixonColes, df: pd.DataFrame) -> np.ndarray:
+    """Per-row 1X2 log loss on df; NaN where a team is unknown to the model."""
     losses = []
     for r in df.itertuples():
         try:
             mk = markets(model.score_matrix(r.home, r.away, r.neutral))
         except KeyError:
+            losses.append(np.nan)
             continue
         outcome = "1" if r.hg > r.ag else ("X" if r.hg == r.ag else "2")
         losses.append(-np.log(max(mk[outcome], 1e-12)))
-    return float(np.mean(losses)) if losses else float("nan")
+    return np.array(losses, dtype=float)
 
+
+def log_loss_1x2(model: DixonColes, df: pd.DataFrame) -> float:
+    """Mean multiclass log loss of 1X2 predictions on matches in df."""
+    losses = match_losses_1x2(model, df)
+    losses = losses[~np.isnan(losses)]
+    return float(np.mean(losses)) if len(losses) else float("nan")

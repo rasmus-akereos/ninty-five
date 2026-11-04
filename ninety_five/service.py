@@ -28,22 +28,39 @@ def datasets() -> dict[str, str]:
             **data_mod.available_datasets()}
 
 
+CLUB_HALF_LIFE: float = CLUB_PARAMS["half_life_days"]  # tuned monthly (tuning.py)
+
+
+def club_params() -> dict:
+    return {**CLUB_PARAMS, "half_life_days": CLUB_HALF_LIFE}
+
+
+def set_club_half_life(days: float) -> None:
+    """Use a new club half-life from now on: cached club models are dropped so
+    the next request refits with it (internationals keep theirs)."""
+    global CLUB_HALF_LIFE
+    with _lock:
+        CLUB_HALF_LIFE = float(days)
+        for key in [k for k in _models if k != "INTL"]:
+            del _models[key]
+
+
 def _fit(key: str, refresh: bool | str = False) -> tuple[DixonColes, pd.DataFrame]:
     """Fit the model for a data set and return it with its training frame.
     `refresh="current"` re-downloads only a country's current season."""
     key = key.upper()
     if key == "EUROPE":
         df, groups = fixtures.load_europe(refresh=bool(refresh))
-        return DixonColes(**CLUB_PARAMS).fit(df, groups=groups), df
+        return DixonColes(**club_params()).fit(df, groups=groups), df
     if key == "UEFA":
         df, groups, _ = uefa.load_uefa(refresh_current=bool(refresh))
-        return DixonColes(**CLUB_PARAMS).fit(df, groups=groups), df
+        return DixonColes(**club_params()).fit(df, groups=groups), df
     if key in data_mod.COUNTRIES:
         df, groups = data_mod.load_country(key, refresh_current=bool(refresh))
-        return DixonColes(**CLUB_PARAMS).fit(df, groups=groups or None), df
+        return DixonColes(**club_params()).fit(df, groups=groups or None), df
     refresh = bool(refresh)
     df = data_mod.load_dataset(key, refresh=refresh)
-    return DixonColes(**(INTL_PARAMS if key == "INTL" else CLUB_PARAMS)).fit(df), df
+    return DixonColes(**(INTL_PARAMS if key == "INTL" else club_params())).fit(df), df
 
 
 def fit_dataset(key: str, refresh: bool = False) -> DixonColes:

@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from . import service
+from . import service, tuning
 
 RUN_AT = time(7, 0)
 TZ = ZoneInfo("Europe/Copenhagen")
@@ -40,6 +40,19 @@ def due(last_fetch: pd.Timestamp | None, last_auto: pd.Timestamp | None, now: pd
     return local >= today_run and (last_auto is None or last_auto < today_run)
 
 
+def tick(history, bets, days: int, now: pd.Timestamp) -> None:
+    """One wake-up: the daily fetch when due, then tuning on the fresh results."""
+    if not due(_ts(history.last_success()), _ts(history.last_success("auto")), now):
+        return
+    out = service.run_refresh(history, bets, days, "auto", refit_countries=True)
+    if out is None:
+        log.info("daily fetch skipped: a refresh is already running")
+        return
+    log.info("daily fetch done: %s matches", out.get("matches"))
+    for d in tuning.run_all(history, now):
+        log.info("tuning %s/%s: %s (%s -> %s, n=%s)", d.setting, d.scope, d.action, d.old, d.new, d.n)
+
+
 def start(history, bets, days: int = 7, wake: float = 3600, stop: threading.Event | None = None) -> threading.Thread | None:
     """Start the daily-fetch thread (None when switched off)."""
     if os.environ.get("NINETY_FIVE_SCHEDULER", "1") == "0":
@@ -49,13 +62,7 @@ def start(history, bets, days: int = 7, wake: float = 3600, stop: threading.Even
     def loop() -> None:
         while not stop.is_set():
             try:
-                now = pd.Timestamp.now(tz="UTC")
-                if due(_ts(history.last_success()), _ts(history.last_success("auto")), now):
-                    out = service.run_refresh(history, bets, days, "auto", refit_countries=True)
-                    if out is None:
-                        log.info("daily fetch skipped: a refresh is already running")
-                    else:
-                        log.info("daily fetch done: %s matches", out.get("matches"))
+                tick(history, bets, days, pd.Timestamp.now(tz="UTC"))
             except Exception as exc:  # retried at the next wake-up
                 log.warning("daily fetch failed: %s", exc)
             stop.wait(wake)

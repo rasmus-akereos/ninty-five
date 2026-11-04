@@ -73,3 +73,21 @@ def test_loop_survives_failing_run(monkeypatch):
         stop.set()
         t.join(2)
     assert not t.is_alive()
+
+
+def test_tuning_runs_after_auto_refresh(monkeypatch):
+    from ninety_five import tuning
+    ran = []
+    monkeypatch.setattr(scheduler, "due", lambda *a: True)
+    monkeypatch.setattr(service, "run_refresh", lambda *a, **k: {"matches": 3})
+    monkeypatch.setattr(tuning, "run_all", lambda history, now: ran.append(now) or [])
+
+    class H:
+        def last_success(self, kind=None):
+            return None
+
+    scheduler.tick(H(), None, 7, T("2026-11-04 07:05"))
+    assert len(ran) == 1
+    monkeypatch.setattr(service, "run_refresh", lambda *a, **k: None)  # another refresh was running
+    scheduler.tick(H(), None, 7, T("2026-11-04 07:05"))
+    assert len(ran) == 1

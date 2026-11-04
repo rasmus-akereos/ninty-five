@@ -26,6 +26,10 @@ history = HistoryStore()
 
 @asynccontextmanager
 async def lifespan(_app):
+    try:  # a tuned club half-life survives restarts
+        tuning.apply_stored(history)
+    except Exception as exc:
+        log.warning("could not apply tuned settings: %s", exc)
     # The daily fetch (07:00 Copenhagen time, with catch-up on start).
     scheduler.start(history, store)
     yield
