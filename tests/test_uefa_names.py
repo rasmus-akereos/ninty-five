@@ -1,3 +1,4 @@
+import pytest
 import pandas as pd
 
 from ninty_five import intl_fixtures, uefa
@@ -65,3 +66,24 @@ def test_espn_league_clubs_skips_failing_slug(monkeypatch):
     monkeypatch.setattr(intl_fixtures, "_get", fake_get)
     clubs = uefa.espn_league_clubs(pd.Timestamp("2026-11-04", tz="UTC"))
     assert clubs["BEL"] == {"Club Brugge", "Gent"} and "SCO" not in clubs
+
+
+# Wrong links the live check (2026-11-04) found with loose matching.
+LIVE_TEAMS = {"GRE": ["AEK", "Aris", "Olympiakos"], "POL": ["Cracovia", "Legia"], "AUT": ["Ried", "LASK"],
+              "DEN": ["Vejle"], "NOR": ["Viking"], "ROU": ["U. Cluj", "Univ. Craiova", "U Craiova 1948"], "FIN": ["Inter Turku"],
+              "ITA": ["Inter"]}
+LIVE_CLUBS = {"GRE": {"AEK Athens", "Olympiacos"}, "AUT": {"LASK Linz"}, "DEN": {"Vejle Boldklub"},
+              "NOR": {"Viking FK"}, "ITA": {"Internazionale"}}
+
+
+@pytest.mark.parametrize("name", ["AEK Larnaca", "Aris Limassol", "Lincoln Red Imps", "Velez Mostar",
+                                  "Víkingur", "Vikingur Reykjavik", "Inter D'Escaldes", "CSU Craiova"])
+def test_foreign_clubs_never_loosely_join_a_covered_team(name):
+    r = uefa.resolve_clubs([name], LIVE_TEAMS, LIVE_CLUBS)
+    assert r.mapping.get(name) in (None, name), r.mapping
+
+
+def test_clubs_outside_espn_leagues_match_strictly():
+    r = uefa.resolve_clubs(["FC Inter Turku", "Legia Warsaw"], LIVE_TEAMS, LIVE_CLUBS)
+    assert r.mapping["FC Inter Turku"] == "Inter Turku"  # every word equal
+    assert r.mapping["Legia Warsaw"] == "Legia"           # the team's words all in the ESPN name

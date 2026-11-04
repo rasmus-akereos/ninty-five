@@ -90,6 +90,25 @@ def run_validation(countries: list[str], start: str) -> None:
                   f"matches {r['matches']:5d}  {verdict}", flush=True)
 
 
+def print_uefa_names() -> None:
+    """Every European club of the UEFA model's window with how it resolved."""
+    from . import uefa
+
+    _, _, res = uefa.load_uefa()
+    teams, _ = uefa.last_inputs
+    country = {t: c for c, ts in teams.items() for t in ts}
+    for name in sorted(set(res.mapping) | res.excluded):
+        if name in res.excluded:
+            print(f"EXCLUDED       {name}")
+        elif name in res.european_only:
+            print(f"European only  {name}")
+        else:
+            got = res.mapping[name]
+            print(f"{country.get(got, '?'):3s}            {name}" + ("" if got == name else f"  ->  {got}"))
+    for w in res.warnings:
+        print("warning:", w)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="ninty-five")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -109,6 +128,7 @@ def main() -> None:
     v = sub.add_parser("validate", help="walk-forward check of the lower-league models (stored for the board)")
     v.add_argument("--country", choices=["ENG", "GER", "ESP", "ITA", "FRA", "DEN"], action="append")
     v.add_argument("--start", default="2024-08-01")
+    sub.add_parser("uefa-names", help="list how the UEFA model matched every European club")
     args = p.parse_args()
 
     if args.cmd == "serve":
@@ -126,6 +146,8 @@ def main() -> None:
         backtest(args.dataset, args.start, args.step_months)
     elif args.cmd == "validate":
         run_validation(args.country or ["ENG", "GER", "ESP", "ITA", "FRA", "DEN"], args.start)
+    elif args.cmd == "uefa-names":
+        print_uefa_names()
 
 
 if __name__ == "__main__":

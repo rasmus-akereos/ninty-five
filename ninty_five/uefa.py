@@ -169,6 +169,17 @@ LEAGUE_SLUGS = {
 # tell. Check with `ninty-five uefa-names`.
 ALIASES: dict[tuple[str, str], str] = {
     **{k: v for k, v in cup_fixtures.ALIASES.items() if k[0] in {"ENG", "GER", "ESP", "FRA", "DEN"}},
+    # Found with `ninty-five uefa-names` on 2026-11-04.
+    ("ENG", "West Ham United"): "West Ham",
+    ("GER", "1. FC Heidenheim 1846"): "Heidenheim",
+    ("ESP", "Girona"): "Girona",
+    ("POR", "Sporting CP"): "Sp Lisbon",
+    ("BEL", "Cercle Brugge KSV"): "Cercle Brugge",
+    ("BEL", "Sint-Truidense"): "St Truiden",
+    ("TUR", "Istanbul Basaksehir"): "Buyuksehyr",
+    ("IRL", "St Patrick's Athletic"): "St. Patricks",
+    ("ROU", "CSU Craiova"): "Univ. Craiova",
+    ("ROU", "Universitatea Cluj"): "U. Cluj",
 }
 
 
@@ -186,6 +197,18 @@ def _resolve(name: str, country: str, teams: list[str]) -> str | None:
     if not set(_tokens(name)) - COMMON_WORDS:
         return name if name in teams else None
     return resolve_name(name, country, teams)
+
+
+def _words(name: str) -> set[str]:
+    return {"united" if t == "utd" else t for t in _tokens(name.replace(".", " "))}
+
+
+def _strict(name: str, teams: list[str]) -> str | None:
+    """The one team all of whose words appear, exactly, in `name` (and not
+    only words many clubs share), or None."""
+    words = _words(name)
+    hits = [t for t in teams if _words(t) <= words and _words(t) - COMMON_WORDS]
+    return hits[0] if len(hits) == 1 else None
 
 
 def _alias(name: str) -> str | None:
@@ -209,7 +232,10 @@ def resolve_clubs(names: Iterable[str], teams: dict[str, list[str]],
         if homes:
             got = _resolve(name, homes[0], teams.get(homes[0], [])) if len(homes) == 1 else None
         else:
-            hits = {c: t for c in teams if (t := _resolve(name, c, teams[c])) is not None}
+            # Not in any ESPN league list: only countries ESPN doesn't list
+            # can claim it, and only strictly (short domestic names are too
+            # often part of a foreign club's name: "AEK" in "AEK Larnaca").
+            hits = {c: t for c in teams if c not in league_clubs and (t := _strict(name, teams[c])) is not None}
             if not hits:
                 out.mapping[name] = name
                 out.european_only.add(name)
@@ -239,3 +265,35 @@ def espn_league_clubs(now: pd.Timestamp) -> dict[str, set[str]]:
         if names:
             out[country] = names
     return out
+
+
+# ------------------------------------------------------------ the data set
+last_resolution: Resolution | None = None
+last_inputs: tuple[dict[str, list[str]], dict[str, set[str]]] | None = None
+
+
+def load_uefa(refresh_current: bool = False, now: pd.Timestamp | None = None,
+              start: pd.Timestamp | None = None) -> tuple[pd.DataFrame, dict[str, str], Resolution]:
+    """Training data for the UEFA data set: domestic and European results
+    (European names mapped to domestic ones; matches of excluded clubs
+    dropped), team -> group, and the name resolution."""
+    global last_resolution, last_inputs
+    now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
+    now = now if now.tzinfo else now.tz_localize("UTC")
+    dom, groups, _ = load_domestic(refresh_current=refresh_current, start=start, now=now)
+    # Resolve against every team of the window (a club relegated since still counts).
+    label_country = {label: country for country, label in UEFA_LEAGUES.values()}
+    teams: dict[str, list[str]] = {}
+    for label, part in dom.groupby("competition"):
+        teams[label_country[label]] = sorted(set(part["home"]) | set(part["away"]))
+    first = _window_start(now.tz_convert(None), start, N_SEASONS)
+    eu, warnings = european_results(first, now, refresh_current=refresh_current)
+    clubs = espn_league_clubs(now)
+    res = resolve_clubs(set(eu["home"]) | set(eu["away"]), teams, clubs)
+    res.warnings = warnings + res.warnings
+    eu = eu[~eu["home"].isin(res.excluded) & ~eu["away"].isin(res.excluded)]
+    eu = eu.assign(home=eu["home"].map(res.mapping), away=eu["away"].map(res.mapping))
+    groups = {**groups, **{c: EUROPEAN_ONLY for c in res.european_only if c not in groups}}
+    df = pd.concat([dom, eu[data.COLUMNS]], ignore_index=True).sort_values("date", kind="stable")
+    last_resolution, last_inputs = res, (teams, clubs)
+    return df.reset_index(drop=True)[data.COLUMNS], groups, res

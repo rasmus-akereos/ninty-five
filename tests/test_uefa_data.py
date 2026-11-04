@@ -177,3 +177,26 @@ def test_failed_month_is_a_warning(espn, monkeypatch):
     df, warnings = uefa.european_results(START, END)
     assert "10" in set(df["event_id"])
     assert warnings == ["UEFA: could not load uefa.champions 202604: timeout"]
+
+
+# ---------------------------------------------------------------- the data set
+def test_load_uefa_links_european_and_domestic(monkeypatch):
+    dom = pd.DataFrame([(pd.Timestamp("2026-09-20"), "Celtic", "Hearts", 2, 0, False, "Scotland 1"),
+                        (pd.Timestamp("2026-09-21"), "Besiktas", "Galatasaray", 1, 1, False, "Turkey 1")],
+                       columns=data.COLUMNS)
+    monkeypatch.setattr(uefa, "load_domestic", lambda **kw: (
+        dom, {"Celtic": "Scotland 1", "Hearts": "Scotland 1", "Besiktas": "Turkey 1", "Galatasaray": "Turkey 1"},
+        {"SCO": ["Celtic", "Hearts"], "TUR": ["Besiktas", "Galatasaray"]}))
+    eu = pd.DataFrame([(pd.Timestamp("2026-10-02"), "Celtic", "Beşiktaş JK", 2, 1, False, "Europa League", "1", False),
+                       (pd.Timestamp("2026-10-02"), "Sparta Prague", "Celtic", 0, 0, False, "Europa League", "2", False),
+                       (pd.Timestamp("2026-10-03"), "Hibernian", "Sparta Prague", 1, 3, False, "Europa League", "3", False)],
+                      columns=data.COLUMNS + ["event_id", "qualifier"])
+    monkeypatch.setattr(uefa, "european_results", lambda start, end, refresh_current=False: (eu, []))
+    monkeypatch.setattr(uefa, "espn_league_clubs", lambda now: {"SCO": {"Celtic", "Hibernian"}})
+    monkeypatch.setitem(uefa.ALIASES, ("TUR", "Beşiktaş JK"), "Besiktas")
+    df, groups, res = uefa.load_uefa(now=pd.Timestamp("2026-11-04", tz="UTC"))
+    europe = df[df["competition"] == "Europa League"]
+    assert set(zip(europe.home, europe.away)) == {("Celtic", "Besiktas"), ("Sparta Prague", "Celtic")}
+    assert groups["Sparta Prague"] == uefa.EUROPEAN_ONLY and groups["Celtic"] == "Scotland 1"
+    assert res.excluded == {"Hibernian"} and uefa.last_resolution is res
+    assert list(df.columns) == data.COLUMNS

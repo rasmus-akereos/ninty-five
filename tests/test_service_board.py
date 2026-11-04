@@ -203,7 +203,32 @@ def test_run_refresh_refits_country_models(tmp_path, monkeypatch):
     monkeypatch.setattr(service, "refresh_board", lambda history, bets, days, now=None: {
         "warnings": [], "auto_settled": [], "snapshots": 0, "matches": 0})
     service.run_refresh(h, bets, 7, "auto", refit_countries=True)
-    assert refits == [(k, "current") for k in ["ENG", "GER", "ESP", "ITA", "FRA", "DEN"]]
+    assert refits == [(k, "current") for k in ["ENG", "GER", "ESP", "ITA", "FRA", "DEN", "UEFA"]]
+
+
+def test_uefa_is_a_dataset_and_refits_daily(tmp_path, monkeypatch):
+    from ninty_five import uefa
+
+    db = tmp_path / "b.sqlite"
+    h, bets = HistoryStore(db), BetStore(db)
+    calls = []
+    tiny = _df([(pd.Timestamp("2026-10-01"), "A", "B", 1, 0, False, "Belgium 1"),
+                (pd.Timestamp("2026-10-08"), "B", "A", 2, 2, False, "Belgium 1")])
+
+    def fake_load(refresh_current=False, now=None, start=None):
+        calls.append(refresh_current)
+        uefa.last_resolution = uefa.Resolution(warnings=["UEFA: no domestic team for X (add it to uefa.ALIASES)"])
+        return tiny, {"A": "Belgium 1", "B": "Belgium 1"}, uefa.last_resolution
+
+    monkeypatch.setattr(uefa, "load_uefa", fake_load)
+    monkeypatch.setattr(service, "_models", {})
+    assert "UEFA" in service.datasets()
+    monkeypatch.setattr(service, "refresh_board", lambda history, bets, days, now=None: {
+        "warnings": [], "auto_settled": [], "snapshots": 0, "matches": 0})
+    monkeypatch.setattr(service.data_mod, "COUNTRIES", {})
+    out = service.run_refresh(h, bets, 7, "auto", refit_countries=True)
+    assert calls == [True]
+    assert out["warnings"] == ["UEFA: no domestic team for X (add it to uefa.ALIASES)"]
 
 
 def test_update_results_fdcu_ignores_earlier_meeting(tmp_path, monkeypatch):

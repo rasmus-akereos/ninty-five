@@ -10,7 +10,7 @@ import uuid
 import pandas as pd
 
 from . import data as data_mod
-from . import cup_fixtures, fixtures, intl_fixtures, league_fixtures
+from . import cup_fixtures, fixtures, intl_fixtures, league_fixtures, uefa
 from .model import CLUB_PARAMS, INTL_PARAMS, DixonColes, markets
 
 LEAGUE_LOOKBACK_DAYS = 31
@@ -23,7 +23,8 @@ log = logging.getLogger("ninty_five")
 
 
 def datasets() -> dict[str, str]:
-    return {"EUROPE": "Europe: Champions League + top leagues (auto fixtures)", **data_mod.COUNTRY_NAMES,
+    return {"EUROPE": "Europe: Champions League + top leagues (auto fixtures)",
+            "UEFA": "Europe: Europa + Conference League (20 leagues + European results)", **data_mod.COUNTRY_NAMES,
             **data_mod.available_datasets()}
 
 
@@ -33,6 +34,9 @@ def _fit(key: str, refresh: bool | str = False) -> tuple[DixonColes, pd.DataFram
     key = key.upper()
     if key == "EUROPE":
         df, groups = fixtures.load_europe(refresh=bool(refresh))
+        return DixonColes(**CLUB_PARAMS).fit(df, groups=groups), df
+    if key == "UEFA":
+        df, groups, _ = uefa.load_uefa(refresh_current=bool(refresh))
         return DixonColes(**CLUB_PARAMS).fit(df, groups=groups), df
     if key in data_mod.COUNTRIES:
         df, groups = data_mod.load_country(key, refresh_current=bool(refresh))
@@ -51,7 +55,7 @@ def _cached(key: str, refresh: bool | str = False) -> tuple[float, DixonColes, p
     with _lock:
         cached = _models.get(key)
         # EUROPE and country data update during the season, so refit periodically.
-        seasonal = key == "EUROPE" or key in data_mod.COUNTRIES
+        seasonal = key in ("EUROPE", "UEFA") or key in data_mod.COUNTRIES
         expired = cached and seasonal and time.time() - cached[0] > MODEL_TTL_SECONDS
         if refresh or cached is None or expired:
             _models[key] = (time.time(), *_fit(key, refresh=refresh))
@@ -331,11 +335,13 @@ def run_refresh(history, bets, days: int, kind: str, now: pd.Timestamp | None = 
     try:
         warnings: list[str] = []
         if refit_countries:
-            for key in data_mod.COUNTRIES:
+            for key in [*data_mod.COUNTRIES, "UEFA"]:
                 try:
                     _cached(key, refresh="current")
                 except Exception as exc:  # keep the previous model
                     warnings.append(f"Could not update {key} data: {exc}")
+            if uefa.last_resolution is not None:  # unmatched European clubs
+                warnings += uefa.last_resolution.warnings
         out = refresh_board(history, bets, days, now=now)
         out["warnings"] = warnings + out["warnings"]
         history.record_run(kind, iso(started), iso(pd.Timestamp.now(tz="UTC")), out.get("matches", 0),
