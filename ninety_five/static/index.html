@@ -46,6 +46,27 @@ a { color: var(--accent); }
 .chips-bar { max-width: 1100px; margin: 0 auto; padding: 0 16px 10px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { flex: none; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+/* phone: the top bar wraps (tabs get their own row), league chips scroll
+   sideways in one row so the sticky bar stays short, and touch targets are
+   at least 40px tall. Wide tables already scroll inside .scroll. */
+@media (max-width: 720px) {
+  .topbar-inner { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
+  .logo span, #settings-btn .lbl { display: none; }
+  #loadboard { margin-left: auto; }
+  .tabs { order: 5; flex: 1 1 calc(100% - 56px); margin-right: 0; }
+  #theme-btn { order: 6; }
+  .tab { flex: 1; min-height: 40px; }
+  .icon-btn { min-height: 40px; min-width: 40px; }
+  .chips-bar { padding: 0 12px 8px; }
+  .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .chip { min-height: 40px; }
+  main { padding: 12px; }
+  button.small { min-height: 40px; padding: 6px 12px; }
+  .logbox input { min-height: 40px; }
+  .cell input { min-height: 40px; }
+  .kpis { grid-template-columns: 1fr 1fr; }
+  input, select { font-size: 16px; }  /* below 16px iPhones zoom in on focus */
+}
 .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
 .chip .n { opacity: .7; margin-left: 5px; font-size: 11px; }
 
@@ -161,7 +182,7 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
       <button class="tab" role="tab" data-tab="bets">Bet log <span class="n" id="bets-count"></span></button>
     </nav>
     <button class="icon-btn primary" id="loadboard" title="Fetch the latest fixtures and results">↻ Refresh</button>
-    <button class="icon-btn" id="settings-btn" title="Settings">⚙ Settings</button>
+    <button class="icon-btn" id="settings-btn" title="Settings">⚙<span class="lbl"> Settings</span></button>
     <button class="icon-btn" id="theme-btn" title="Light / dark">◐</button>
   </div>
   <div class="chips-bar"><div class="chips" id="chips"></div></div>
