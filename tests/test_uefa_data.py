@@ -200,3 +200,16 @@ def test_load_uefa_links_european_and_domestic(monkeypatch):
     assert groups["Sparta Prague"] == uefa.EUROPEAN_ONLY and groups["Celtic"] == "Scotland 1"
     assert res.excluded == {"Hibernian"} and uefa.last_resolution is res
     assert list(df.columns) == data.COLUMNS
+
+
+def test_current_month_failure_raises_so_the_old_model_is_kept(espn, monkeypatch):
+    real = intl_fixtures._get
+
+    def flaky(slug, month):
+        if month == "202611":
+            raise OSError("timeout")
+        return real(slug, month)
+
+    monkeypatch.setattr(intl_fixtures, "_get", flaky)
+    with pytest.raises(RuntimeError, match="202611"):
+        uefa.european_results(START, END)

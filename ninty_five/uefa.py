@@ -131,6 +131,8 @@ def european_results(start: pd.Timestamp, end: pd.Timestamp,
             try:
                 payload = _month_payload(slug, month, current, refresh_current)
             except Exception as exc:
+                if month >= current:  # this month's results matter: keep the previous model
+                    raise RuntimeError(f"UEFA: could not load {slug} {month}: {exc}") from exc
                 warnings.append(f"UEFA: could not load {slug} {month}: {exc}")
                 continue
             for e in payload.get("events", []):
@@ -233,9 +235,9 @@ def resolve_clubs(names: Iterable[str], teams: dict[str, list[str]],
             got = _resolve(name, homes[0], teams.get(homes[0], [])) if len(homes) == 1 else None
         else:
             # Not in any ESPN league list: only countries ESPN doesn't list
-            # can claim it, and only strictly (short domestic names are too
+            # (never one whose list merely failed to load) can claim it, and only strictly (short domestic names are too
             # often part of a foreign club's name: "AEK" in "AEK Larnaca").
-            hits = {c: t for c in teams if c not in league_clubs and (t := _strict(name, teams[c])) is not None}
+            hits = {c: t for c in teams if c not in LEAGUE_SLUGS and (t := _strict(name, teams[c])) is not None}
             if not hits:
                 out.mapping[name] = name
                 out.european_only.add(name)
@@ -250,20 +252,31 @@ def resolve_clubs(names: Iterable[str], teams: dict[str, list[str]],
 
 
 def espn_league_clubs(now: pd.Timestamp) -> dict[str, set[str]]:
-    """ESPN names of each covered league's clubs (this month and last). A
-    league whose scoreboard fails or is empty is left out."""
+    """ESPN names of each covered league's clubs over the last 12 months (so
+    calendar-year leagues are covered in their off-season; finished months
+    come from the disk cache). The last good list is kept on disk and used
+    when a league's scoreboard fails; a league with no list at all raises, so
+    a refit fails and the previous model is kept rather than matching loosely."""
     out: dict[str, set[str]] = {}
+    current = now.strftime("%Y%m")
     for country, slug in LEAGUE_SLUGS.items():
         names: set[str] = set()
-        for month in intl_fixtures._months(now - pd.DateOffset(months=1), now):
+        for month in intl_fixtures._months(now - pd.DateOffset(months=12), now):
             try:
-                df = intl_fixtures.parse_scoreboard(intl_fixtures._get(slug, month), club=True)
+                df = intl_fixtures.parse_scoreboard(_month_payload(slug, month, current, False), club=True)
             except Exception as exc:
                 log.warning("UEFA: %s %s unavailable: %s", slug, month, exc)
                 continue
             names |= set(df["home"]) | set(df["away"])
+        path = ESPN_CACHE / f"clubs_{slug}.json"
         if names:
-            out[country] = names
+            ESPN_CACHE.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(sorted(names)))
+        elif path.exists():
+            names = set(json.loads(path.read_text()))
+        else:
+            raise RuntimeError(f"No club list for {slug} from ESPN")
+        out[country] = names
     return out
 
 

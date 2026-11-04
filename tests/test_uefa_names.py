@@ -7,8 +7,8 @@ TEAMS = {
     "BEL": ["Club Brugge", "Cercle Brugge", "Anderlecht"],
     "SCO": ["Celtic", "Rangers", "Hearts"],
     "ROU": ["Dinamo Bucuresti", "FCSB"],
-    "NED": ["Twente", "Ajax"],
-    "ENG": ["Twente FC"],  # contrived namesake for the ambiguity test
+    "SUI": ["Twente", "Basel"],
+    "POL": ["Twente FC"],  # contrived namesakes for the ambiguity test
 }
 LEAGUE_CLUBS = {"BEL": {"Club Brugge", "Cercle Brugge", "RSC Anderlecht"},
                 "SCO": {"Celtic", "Rangers", "Heart of Midlothian", "Hibernian"}}
@@ -52,9 +52,9 @@ def test_club_outside_espn_leagues_resolves_by_unique_team_list():
     assert r.mapping == {"FCSB": "FCSB"} and not r.european_only
 
 
-def test_espn_league_clubs_skips_failing_slug(monkeypatch):
+def _league_get(fail=()):
     def fake_get(slug, month):
-        if slug == "sco.1":
+        if slug in fail:
             raise OSError("down")
         if slug == "bel.1":
             return {"events": [{"id": "1", "date": "2026-11-01T15:00Z", "status": {"type": {"name": "STATUS_FULL_TIME"}},
@@ -62,10 +62,32 @@ def test_espn_league_clubs_skips_failing_slug(monkeypatch):
                                     {"homeAway": "home", "team": {"displayName": "Club Brugge"}},
                                     {"homeAway": "away", "team": {"displayName": "Gent"}}]}]}]}
         return {"events": []}
+    return fake_get
 
-    monkeypatch.setattr(intl_fixtures, "_get", fake_get)
-    clubs = uefa.espn_league_clubs(pd.Timestamp("2026-11-04", tz="UTC"))
-    assert clubs["BEL"] == {"Club Brugge", "Gent"} and "SCO" not in clubs
+
+def test_espn_league_clubs_falls_back_to_last_good_list(monkeypatch, tmp_path):
+    monkeypatch.setattr(uefa, "ESPN_CACHE", tmp_path)
+    monkeypatch.setattr(uefa, "LEAGUE_SLUGS", {"BEL": "bel.1"})
+    monkeypatch.setattr(intl_fixtures, "_get", _league_get())
+    assert uefa.espn_league_clubs(pd.Timestamp("2026-11-04", tz="UTC"))["BEL"] == {"Club Brugge", "Gent"}
+    monkeypatch.setattr(intl_fixtures, "_get", _league_get(fail={"bel.1"}))  # down, or off-season empty
+    assert uefa.espn_league_clubs(pd.Timestamp("2026-12-04", tz="UTC"))["BEL"] == {"Club Brugge", "Gent"}
+
+
+def test_espn_league_clubs_without_any_list_raises(monkeypatch, tmp_path):
+    monkeypatch.setattr(uefa, "ESPN_CACHE", tmp_path)
+    monkeypatch.setattr(uefa, "LEAGUE_SLUGS", {"BEL": "bel.1", "SCO": "sco.1"})
+    monkeypatch.setattr(intl_fixtures, "_get", _league_get(fail={"sco.1"}))
+    with pytest.raises(RuntimeError, match="sco.1"):
+        uefa.espn_league_clubs(pd.Timestamp("2026-11-04", tz="UTC"))
+
+
+@pytest.mark.parametrize("name,country,team", [("AEK Larnaca", "GRE", "AEK"), ("Inter D'Escaldes", "ITA", "Inter"),
+                                               ("Dinamo Brest", "FRA", "Brest")])
+def test_espn_listed_country_never_claims_clubs_outside_its_list(name, country, team):
+    """Even when that country's list is missing, only SUI/ROU/FIN/POL may claim a club strictly."""
+    r = uefa.resolve_clubs([name], {country: [team]}, {})
+    assert r.mapping.get(name) != team
 
 
 # Wrong links the live check (2026-11-04) found with loose matching.
@@ -91,3 +113,13 @@ def test_clubs_outside_espn_leagues_match_strictly():
 
 def test_romanian_craiova_never_becomes_polish_cracovia():
     assert uefa.resolve_clubs(["CSU Craiova"], LIVE_TEAMS, LIVE_CLUBS).mapping.get("CSU Craiova") != "Cracovia"
+
+
+def test_off_season_league_still_has_its_clubs(monkeypatch, tmp_path):
+    """Ireland, Norway, Sweden play no league games for months: look back a year."""
+    monkeypatch.setattr(uefa, "ESPN_CACHE", tmp_path)
+    monkeypatch.setattr(uefa, "LEAGUE_SLUGS", {"BEL": "bel.1"})
+    played = _league_get()
+    monkeypatch.setattr(intl_fixtures, "_get", lambda slug, month: played(slug, month) if month == "202606"
+                        else {"events": []})
+    assert uefa.espn_league_clubs(pd.Timestamp("2026-11-04", tz="UTC"))["BEL"] == {"Club Brugge", "Gent"}

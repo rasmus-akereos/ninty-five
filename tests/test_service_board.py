@@ -290,3 +290,22 @@ def test_update_results_settles_cup_bets_from_espn(tmp_path, monkeypatch):
     assert service.update_results(h, bets, pd.Timestamp("2026-11-08T12:00Z")) == [bid]
     assert bets.list()[0]["status"] == "won"
     assert set(cup_fixtures.CUPS) <= set(asked[0])  # cup competitions are searched too
+
+
+def test_run_refresh_failed_uefa_refit_warns_without_stale_name_warnings(tmp_path, monkeypatch):
+    from ninty_five import uefa
+
+    db = tmp_path / "b.sqlite"
+    h, bets = HistoryStore(db), BetStore(db)
+    monkeypatch.setattr(uefa, "last_resolution", uefa.Resolution(warnings=["UEFA: old warning"]))
+
+    def cached(key, refresh=False):
+        if key == "UEFA":
+            raise RuntimeError("ESPN down")
+
+    monkeypatch.setattr(service, "_cached", cached)
+    monkeypatch.setattr(service.data_mod, "COUNTRIES", {})
+    monkeypatch.setattr(service, "refresh_board", lambda history, bets, days, now=None: {
+        "warnings": [], "auto_settled": [], "snapshots": 0, "matches": 0})
+    out = service.run_refresh(h, bets, 7, "auto", refit_countries=True)
+    assert out["warnings"] == ["Could not update UEFA data: ESPN down"]

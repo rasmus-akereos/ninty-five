@@ -368,8 +368,9 @@ def run_refresh(history, bets, days: int, kind: str, now: pd.Timestamp | None = 
                     _cached(key, refresh="current")
                 except Exception as exc:  # keep the previous model
                     warnings.append(f"Could not update {key} data: {exc}")
-            if uefa.last_resolution is not None:  # unmatched European clubs
-                warnings += uefa.last_resolution.warnings
+                else:
+                    if key == "UEFA" and uefa.last_resolution is not None:  # unmatched European clubs
+                        warnings += uefa.last_resolution.warnings
         out = refresh_board(history, bets, days, now=now)
         out["warnings"] = warnings + out["warnings"]
         history.record_run(kind, iso(started), iso(pd.Timestamp.now(tz="UTC")), out.get("matches", 0),
