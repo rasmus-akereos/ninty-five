@@ -35,3 +35,52 @@ def test_validation_round_trip(tmp_path):
     v = h.validation()
     assert v["Spain 2"]["model"] == 1.02 and v["Italy 2"]["as_of"] == "2026-11-04"
     assert v["Spain 2"]["as_of"] == "2026-11-03"
+
+
+# ---------------------------------------------------------------- UEFA model
+from ninty_five import uefa  # noqa: E402
+
+
+def test_unproven_judges_europa_rows():
+    row = {"competition": "Europa League"}
+    worse = {"Europa League": {"model": 1.05, "baseline": 1.04, "matches": 300}}
+    assert validate.unproven(row, worse) == {"model": 1.05, "baseline": 1.04}
+    better = {"Europa League": {"model": 1.00, "baseline": 1.04, "matches": 300}}
+    assert validate.unproven(row, better) is None
+    assert validate.unproven({"competition": "Conference League"}, {}) == {"model": None, "baseline": None}
+    assert validate.unproven({"competition": "Champions League"}, {}) is None
+
+
+def _synthetic_uefa():
+    rng = np.random.default_rng(1)
+    rows = []
+    bel, ned = ["A", "B", "C", "D"], ["E", "F", "G", "H"]
+    for i, day in enumerate(pd.date_range("2021-08-01", "2026-10-31", freq="7D")):
+        for teams, label in ((bel, "Belgium 1"), (ned, "Netherlands 1")):
+            h, a = teams[i % 4], teams[(i + 1 + i // 4) % 4]
+            if h != a:
+                rows.append((day, h, a, int(rng.poisson(1.5)), int(rng.poisson(1.1)), False, label))
+        if i % 2 == 0:
+            rows.append((day + pd.Timedelta(days=3), "A", "E", int(rng.poisson(1.4)), int(rng.poisson(1.2)), False,
+                         "Europa League"))
+            rows.append((day + pd.Timedelta(days=3), "Z", "C", int(rng.poisson(1.0)), int(rng.poisson(1.3)), False,
+                         "Europa League"))
+        if i % 4 == 0:
+            rows.append((day + pd.Timedelta(days=3), "B", "F", int(rng.poisson(1.3)), int(rng.poisson(1.3)), False,
+                         "Conference League"))
+            rows.append((day + pd.Timedelta(days=4), "Z", "H", 1, 1, False, "Conference League qualifying"))
+    df = pd.DataFrame(rows, columns=data.COLUMNS)
+    groups = {**{t: "Belgium 1" for t in bel}, **{t: "Netherlands 1" for t in ned}, "Z": uefa.EUROPEAN_ONLY}
+    return df, groups, uefa.Resolution(european_only={"Z"})
+
+
+def test_validate_uefa_scores_only_domestic_pairs_and_pools_small_samples(monkeypatch):
+    monkeypatch.setattr(uefa, "load_uefa", lambda start=None, **kw: _synthetic_uefa())
+    out = validate.validate_uefa(start="2026-05-01")
+    assert out["Europa League"]["matches"] == out["Conference League"]["matches"]  # pooled: ECL under 150
+    assert out["Europa League"]["model"] == out["Conference League"]["model"]
+    assert out["Europa League (thin data)"]["matches"] > 0  # Z v C
+    df, _, _ = _synthetic_uefa()
+    after = df[(df.date >= "2026-05-01") & df.competition.isin(["Europa League", "Conference League"])
+               & (df.home != "Z")]
+    assert out["Europa League"]["matches"] == len(after)

@@ -90,6 +90,25 @@ def run_validation(countries: list[str], start: str) -> None:
                   f"matches {r['matches']:5d}  {verdict}", flush=True)
 
 
+def run_validation_uefa(start: str) -> None:
+    """Validate the UEFA model, print every result and store the board's."""
+    from .history import HistoryStore
+    from .validate import compare_cl_with_europe, validate_uefa
+
+    out = validate_uefa(start=start)
+    HistoryStore().set_validation(out, as_of=str(pd.Timestamp.now(tz="UTC").date()))
+    for label, r in out.items():
+        verdict = "beats baseline" if r["model"] < r["baseline"] else "MODEL UNPROVEN"
+        print(f"{label:32s}  model {r['model']:.4f}  baseline {r['baseline']:.4f}  "
+              f"matches {r['matches']:5d}  {verdict}", flush=True)
+    cl = compare_cl_with_europe()
+    if cl is None:
+        print("Champions League vs EUROPE model: unavailable")
+    else:
+        print(f"Champions League vs EUROPE model (from 2025-08): UEFA {cl['model']:.4f} on {cl['matches']} matches, "
+              f"EUROPE {cl['europe']:.4f} on {cl['matches_europe']} matches")
+
+
 def print_uefa_names() -> None:
     """Every European club of the UEFA model's window with how it resolved."""
     from . import uefa
@@ -128,6 +147,7 @@ def main() -> None:
     v = sub.add_parser("validate", help="walk-forward check of the lower-league models (stored for the board)")
     v.add_argument("--country", choices=["ENG", "GER", "ESP", "ITA", "FRA", "DEN"], action="append")
     v.add_argument("--start", default="2024-08-01")
+    v.add_argument("--uefa", action="store_true", help="validate the Europa/Conference League model instead")
     sub.add_parser("uefa-names", help="list how the UEFA model matched every European club")
     args = p.parse_args()
 
@@ -144,6 +164,8 @@ def main() -> None:
         print_fixtures(args.days, args.min_edge)
     elif args.cmd == "backtest":
         backtest(args.dataset, args.start, args.step_months)
+    elif args.cmd == "validate" and args.uefa:
+        run_validation_uefa(args.start)
     elif args.cmd == "validate":
         run_validation(args.country or ["ENG", "GER", "ESP", "ITA", "FRA", "DEN"], args.start)
     elif args.cmd == "uefa-names":
