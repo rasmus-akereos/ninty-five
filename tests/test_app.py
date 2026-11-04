@@ -170,3 +170,15 @@ def test_settle_with_nothing_to_do_is_rejected(client):
     r = client.post(f"/api/bets/{bid}/settle", json={"unknown_field": 20})
     assert r.status_code == 400
     assert client.get("/api/bets").json()["bets"][0]["status"] == "open"
+
+
+def test_board_keeps_european_only_flag(client, monkeypatch):
+    euro = {**_row(), "key": "espn:2", "dataset": "UEFA", "match_id": None, "competition": "Europa League",
+            "european_only": True, "leagues": ["European only", "England 1"]}
+    dom = {**_row(), "key": "espn:1", "dataset": "UEFA", "match_id": None, "competition": "Europa League",
+           "european_only": False, "leagues": ["Scotland 1", "Turkey 1"]}
+    monkeypatch.setattr(service, "build_board", lambda days: ([euro, dom], []))
+    client.post("/api/fixtures/refresh")
+    board = {f["key"]: f for f in client.get("/api/fixtures").json()["fixtures"]}
+    assert board["espn:2"]["european_only"] is True
+    assert not board["espn:1"].get("european_only")

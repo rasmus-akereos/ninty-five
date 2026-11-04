@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import fixtures, import_odds, scheduler, service, track, validate
+from . import fixtures, import_odds, scheduler, service, track, uefa, validate
 from .model import DixonColes, markets
 from .history import HistoryStore
 from .store import BetStore
@@ -108,7 +108,10 @@ def _stored_board(days: int, min_edge: float) -> dict:
     rows = []
     for r in service.with_min_odds(history.board(days), min_edge):
         note = validate.unproven(r, checks)
-        rows.append({**r, "unproven": note} if note else r)
+        r = {**r, "unproven": note} if note else r
+        if uefa.EUROPEAN_ONLY in (r.get("leagues") or []):  # the stored board keeps leagues, not the flag
+            r = {**r, "european_only": True}
+        rows.append(r)
     return {
         "fixtures": rows,
         "fetched_at": fetched,
