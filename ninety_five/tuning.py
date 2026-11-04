@@ -98,3 +98,74 @@ def decide_alpha(evidence: list[dict], current: float, scope: str) -> Decision:
     ok, _, se = confirm(old_l, new_l)
     return Decision("alpha", scope, current, cand if ok else current, "changed" if ok else "kept", n,
                     float(old_l.mean()), float(new_l.mean()), se, note=f"candidate {cand:.2f}")
+
+
+def alpha_for(tuned: dict, competition: str | None) -> tuple[float, str]:
+    """The model weight to use for a match: its league's tuned value, else the
+    overall tuned value, else the default. Returns (value, scope used)."""
+    if competition and ("alpha", competition) in tuned:
+        return tuned[("alpha", competition)], competition
+    if ("alpha", "all") in tuned:
+        return tuned[("alpha", "all")], "all"
+    return ALPHA_DEFAULT, "default"
+
+
+def _iso(now) -> str:
+    return now.isoformat(timespec="seconds")
+
+
+def _apply(history, d: Decision, now) -> None:
+    if d.action == "waiting":
+        return
+    if d.action == "changed":
+        history.set_tuned(d.setting, d.scope, d.new, _iso(now))
+    history.log_tuning(d.to_log(_iso(now)))
+
+
+def run_alpha(history, now) -> list[Decision]:
+    """Test the overall weight, then each league with enough evidence of its own."""
+    evidence = alpha_evidence(history.finished())
+    tuned = history.tuned()
+    by_league: dict[str, list[dict]] = {}
+    for r in evidence:
+        by_league.setdefault(r["competition"], []).append(r)
+    scopes = [("all", evidence)] + [(c, rows) for c, rows in sorted(by_league.items()) if len(rows) >= ALPHA_MIN_N]
+    out = []
+    for scope, rows in scopes:
+        if history.blocked("alpha", scope, now):
+            continue
+        current = tuned.get(("alpha", scope), tuned.get(("alpha", "all"), ALPHA_DEFAULT))
+        d = decide_alpha(rows, current, scope)
+        _apply(history, d, now)
+        out.append(d)
+    return out
+
+
+def overview(history) -> dict:
+    """What the Tuning sub-tab shows: values in use, progress, the log."""
+    from .model import CLUB_PARAMS
+
+    tuned = history.tuned()
+    settings = [{"setting": "alpha", "scope": "all", "value": tuned.get(("alpha", "all"), ALPHA_DEFAULT),
+                 "default": ("alpha", "all") not in tuned}]
+    settings += [{"setting": s, "scope": sc, "value": v, "default": False}
+                 for (s, sc), v in sorted(tuned.items()) if s == "alpha" and sc != "all"]
+    settings.append({"setting": "half_life", "scope": "club",
+                     "value": tuned.get(("half_life", "club"), CLUB_PARAMS["half_life_days"]),
+                     "default": ("half_life", "club") not in tuned})
+
+    evidence = alpha_evidence(history.finished())
+    counts: dict[str, int] = {}
+    for r in evidence:
+        counts[r["competition"]] = counts.get(r["competition"], 0) + 1
+
+    def prog(setting, scope, n, needed):
+        last = history.last_tuning(setting, scope)
+        return {"setting": setting, "scope": scope, "n": n, "needed": needed,
+                "last_test": last["at"] if last else None, "last_action": last["action"] if last else None}
+
+    progress = [prog("alpha", "all", len(evidence), ALPHA_MIN_N)]
+    progress += [prog("alpha", c, n, ALPHA_MIN_N) for c, n in sorted(counts.items(), key=lambda kv: -kv[1])]
+    progress.append(prog("half_life", "club", None, None))
+    return {"settings": settings, "progress": progress, "log": history.tuning_log(50),
+            "deferred": ["Team corrections"]}

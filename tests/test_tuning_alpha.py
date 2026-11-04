@@ -54,3 +54,52 @@ def test_evidence_skips_partial_odds():
     no_probs = {**full, "probabilities": {"1": 0.5}}
     ev = tuning.alpha_evidence([full, partial, no_probs])
     assert len(ev) == 1 and ev[0]["pm"] == 0.5 and 0.4 < ev[0]["pk"] < 0.5
+
+
+def _finished(n, comp="England 2", seed=2):
+    """HistoryStore.finished()-shaped rows where the model is the truth and the
+    typed odds are a noisy market with a 5% margin."""
+    rng = np.random.default_rng(seed)
+    out = []
+    for i in range(n):
+        true = rng.dirichlet([4, 3, 3])
+        mkt = 0.2 * true + 0.8 * rng.dirichlet([1, 1, 1])
+        k = rng.choice(3, p=true)
+        hg, ag = [(1, 0), (1, 1), (0, 1)][k]
+        out.append({"kickoff": (pd.Timestamp("2026-01-01T15:00Z") + pd.Timedelta(hours=i)).isoformat(),
+                    "competition": comp, "hg": hg, "ag": ag,
+                    "probabilities": dict(zip("1X2", map(float, true))),
+                    "odds": dict(zip("1X2", map(float, 1 / (mkt * 1.05))))})
+    return out
+
+
+def test_alpha_for_prefers_league_then_overall_then_default():
+    tuned = {("alpha", "all"): 0.4, ("alpha", "England 2"): 0.7}
+    assert tuning.alpha_for(tuned, "England 2") == (0.7, "England 2")
+    assert tuning.alpha_for(tuned, "Spain") == (0.4, "all")
+    assert tuning.alpha_for(tuned, None) == (0.4, "all")
+    assert tuning.alpha_for({}, "Spain") == (0.5, "default")
+
+
+def test_run_alpha_changes_logs_and_skips_blocked(tmp_path, monkeypatch):
+    from ninety_five.history import HistoryStore
+    h = HistoryStore(tmp_path / "h.sqlite")
+    monkeypatch.setattr(h, "finished", lambda competition=None: _finished(400))
+    now = pd.Timestamp("2026-11-04T07:00Z")
+    ds = tuning.run_alpha(h, now)
+    overall = next(d for d in ds if d.scope == "all")
+    assert overall.action == "changed" and h.tuned()[("alpha", "all")] == pytest.approx(0.6)
+    assert any(d.scope == "England 2" for d in ds)  # 400 matches in that league: tested too
+    change = h.last_tuning("alpha", "all", action="changed")
+    h.revert(change["id"], now.isoformat())
+    later = tuning.run_alpha(h, now + pd.Timedelta(days=1))
+    assert all(d.scope != "all" for d in later)
+    assert h.tuned()[("alpha", "all")] == 0.5
+
+
+def test_run_alpha_waiting_logs_nothing(tmp_path, monkeypatch):
+    from ninety_five.history import HistoryStore
+    h = HistoryStore(tmp_path / "h.sqlite")
+    monkeypatch.setattr(h, "finished", lambda competition=None: _finished(40))
+    assert [d.action for d in tuning.run_alpha(h, pd.Timestamp("2026-11-04T07:00Z"))] == ["waiting"]
+    assert h.tuning_log() == []

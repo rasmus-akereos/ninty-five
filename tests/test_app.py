@@ -215,3 +215,48 @@ def test_stats_betting_uses_competition(client):
 
 def test_stats_model_endpoint(client):
     assert client.get("/api/stats/model").json() == {"teams": [], "leagues": []}
+
+
+FULL_1X2 = {"1": 2.2, "X": 3.4, "2": 3.3}
+
+
+def test_evaluate_uses_league_alpha(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    app_mod.history.set_tuned("alpha", "England 2", 0.7, "2026-11-04T07:00:00+00:00")
+    body = {"dataset": "EUROPE", "home": "A", "away": "B", "match_key": "fd:1", "odds": FULL_1X2}
+    r = client.post("/api/evaluate", json=body).json()
+    assert r["alpha"] == {"value": 0.7, "scope": "England 2"}
+    s = next(x for x in r["selections"] if x["market"] == "1")
+    assert s["p_blend"] == pytest.approx(0.7 * s["p_model"] + 0.3 * s["p_market"])
+
+
+def test_evaluate_manual_falls_back_to_overall(client):
+    body = {"dataset": "EUROPE", "home": "A", "away": "B", "odds": FULL_1X2}
+    assert client.post("/api/evaluate", json=body).json()["alpha"] == {"value": 0.5, "scope": "default"}
+    app_mod.history.set_tuned("alpha", "all", 0.4, "2026-11-04T07:00:00+00:00")
+    assert client.post("/api/evaluate", json=body).json()["alpha"] == {"value": 0.4, "scope": "all"}
+
+
+def test_client_alpha_ignored(client):
+    body = {"dataset": "EUROPE", "home": "A", "away": "B", "odds": FULL_1X2, "settings": {"alpha": 1.0}}
+    r = client.post("/api/evaluate", json=body).json()
+    assert r["alpha"]["value"] == 0.5
+    s = next(x for x in r["selections"] if x["market"] == "1")
+    assert s["p_blend"] == pytest.approx(0.5 * s["p_model"] + 0.5 * s["p_market"])
+
+
+def test_tuning_endpoint_and_revert(client):
+    h = app_mod.history
+    h.set_tuned("alpha", "all", 0.6, "2026-11-04T07:00:00+00:00")
+    log_id = h.log_tuning({"at": "2026-11-04T07:00:00+00:00", "setting": "alpha", "scope": "all", "old": 0.5,
+                           "new": 0.6, "action": "changed", "n": 150, "loss_old": 1.0, "loss_new": 0.98, "se": 0.005})
+    t = client.get("/api/tuning").json()
+    assert {"setting": "alpha", "scope": "all", "value": 0.6, "default": False} in t["settings"]
+    assert any(s["setting"] == "half_life" and s["default"] for s in t["settings"])
+    prog = next(p for p in t["progress"] if p["setting"] == "alpha" and p["scope"] == "all")
+    assert prog["needed"] == 100 and prog["last_action"] == "changed"
+    assert t["log"][0]["id"] == log_id and t["deferred"] == ["Team corrections"]
+    r = client.post(f"/api/tuning/{log_id}/revert")
+    assert r.status_code == 200 and r.json()["action"] == "reverted"
+    assert client.post(f"/api/tuning/{log_id}/revert").status_code == 400
+    assert h.tuned()[("alpha", "all")] == 0.5

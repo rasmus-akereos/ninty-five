@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import fixtures, import_odds, scheduler, service, stats, track, uefa, validate
+from . import fixtures, import_odds, scheduler, service, stats, track, tuning, uefa, validate
 from .model import DixonColes, markets
 from .history import HistoryStore
 from .store import BetStore, DuplicateBet
@@ -45,8 +45,7 @@ def get_model(dataset: str, refresh: bool = False) -> DixonColes:
 
 
 # ----------------------------------------------------------------- schemas
-class SettingsIn(BaseModel):
-    alpha: float = Field(0.5, ge=0, le=1)
+class SettingsIn(BaseModel):  # the model weight alpha is the server's (tuning.py)
     kelly_fraction: float = Field(0.25, ge=0, le=1)
     max_stake_pct: float = Field(0.03, ge=0, le=1)
     min_edge: float = 0.03
@@ -189,6 +188,22 @@ def stats_model() -> dict:
     return stats.model_insight(history.finished())
 
 
+@app.get("/api/tuning")
+def tuning_overview() -> dict:
+    return tuning.overview(history)
+
+
+@app.post("/api/tuning/{log_id}/revert")
+def revert_tuning(log_id: int) -> dict:
+    try:
+        row = history.revert(log_id, pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if row["setting"] == "half_life":
+        service.set_club_half_life(row["new"])
+    return row
+
+
 @app.get("/api/teams")
 def teams(dataset: str = "INTL") -> dict:
     m = get_model(dataset)
@@ -219,7 +234,18 @@ def evaluate_match(req: EvaluateIn) -> dict:
     sm = m.score_matrix(req.home, req.away, req.neutral)
     probs = markets(sm)
     odds = {k: v for k, v in req.odds.items() if v and v > 1}
-    selections = evaluate(probs, odds, Settings(**req.settings.model_dump()))
+    competition = None
+    if req.match_key:
+        try:
+            competition = (history.match(req.match_key) or {}).get("competition")
+        except Exception as exc:  # history must never break pricing
+            log.warning("could not look up match: %s", exc)
+    try:
+        alpha, alpha_scope = tuning.alpha_for(history.tuned(), competition)
+    except Exception as exc:
+        log.warning("could not read tuned settings: %s", exc)
+        alpha, alpha_scope = tuning.ALPHA_DEFAULT, "default"
+    selections = evaluate(probs, odds, Settings(alpha=alpha, **req.settings.model_dump()))
     # Previous visit's prices are shown as hints, so read them before storing.
     last_odds: dict = {}
     try:
@@ -247,6 +273,7 @@ def evaluate_match(req: EvaluateIn) -> dict:
         "margins": margins,
         "selections": [s.to_dict() for s in selections],
         "last_odds": last_odds,
+        "alpha": {"value": alpha, "scope": alpha_scope},
     }
 
 
