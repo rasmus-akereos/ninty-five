@@ -133,6 +133,9 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
 .logged { color: var(--good); font-weight: 600; font-size: 12px; }
 .logbox { display: inline-flex; gap: 4px; align-items: center; }
 .logbox input { width: 5em; padding: 4px 6px; text-align: right; }
+#bets th:nth-child(2), #bets td:nth-child(2) { text-align: left; }
+.bymatch { margin: 0 0 12px; }
+.bymatch summary { margin-bottom: 6px; }
 .unrated { color: var(--faint); font-size: 12px; }
 .add .mrow { color: var(--accent); font-weight: 600; justify-content: center; }
 .empty { color: var(--muted); text-align: center; padding: 24px; }
@@ -776,8 +779,14 @@ async function loadBets() {
       <div class="kpi"><span>Likely range (8 in 10)</span><b>${num(o.p10, 0)} to +${num(o.p90, 0)} kr</b></div>
       <div class="kpi"><span>All lose / all win</span><b>${num(o.worst, 0)} / +${num(o.best, 0)} kr</b></div>
     </div>
-    <p class="muted" style="margin:0 0 6px">By match: ${o.by_match.map(m => `${esc(m.match)} <b>${num(m.stake, 0)} kr</b>${m.n > 1 ? ` (${m.n} bets)` : ""}`).join(" · ")}</p>
-    <p class="muted" style="margin:0 0 12px">Simulated from the app's chances, treating each bet as separate. Bets on the same match tend to win or lose together, so the real range is wider. <b>Take Profit above</b>: if Danske Spil's Take Profit offer is higher than this before kick-off, taking it beats keeping the bet.</p>
+    <details class="bymatch">
+      <summary>By match (${o.by_match.length})</summary>
+      <div class="scroll"><table>
+        <tr><th>Match</th><th>Bets</th><th>Stake</th></tr>
+        ${o.by_match.map(m => `<tr><td>${esc(m.match)}</td><td>${m.n}</td><td>${num(m.stake, 0)} kr</td></tr>`).join("")}
+      </table></div>
+      <p class="muted">Simulated from the app's chances, treating each bet as separate. Bets on the same match tend to win or lose together, so the real range is wider. <b>Take Profit above</b>: if Danske Spil's Take Profit offer is higher than this before kick-off, taking it beats keeping the bet.</p>
+    </details>
     <h3 class="sub">All bets</h3>` : "";
   $("bets").innerHTML = bets.length ? `<tr><th>Kick-off</th><th>Match</th><th>Selection</th><th>Odds</th><th>Stake</th><th>EV</th><th>Take Profit above</th><th>Close</th><th>Result</th><th>P/L</th><th></th></tr>` +
     bets.map(b => `<tr><td>${kickoffLabel(b.kickoff)}</td><td>${esc(b.home)} – ${esc(b.away)}</td><td>${esc(b.market)}</td><td>${num(b.odds)}</td>
