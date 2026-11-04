@@ -740,6 +740,8 @@ function showTab(name) {
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => { showTab(t.dataset.tab); window.scrollTo(0, 0); });
 showTab(store.get("tab"));
+// The daily fetch settles bets while the page sits open: reload the log on return.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadBets(); loadTrack(); } });
 
 $("loadboard").onclick = refreshBoard;
 $("settings-btn").onclick = () => { const p = $("settings"); p.hidden = !p.hidden; };
