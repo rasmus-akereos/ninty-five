@@ -9,11 +9,12 @@ without domestic data are rated from their European results alone
 
 from __future__ import annotations
 
+import json
 import logging
 
 import pandas as pd
 
-from . import data
+from . import data, intl_fixtures
 
 log = logging.getLogger("ninty_five")
 
@@ -82,3 +83,70 @@ def load_domestic(n_seasons: int = N_SEASONS, refresh_current: bool = False, sta
         groups[r.home] = r.competition
         groups[r.away] = r.competition
     return out[data.COLUMNS], groups, teams
+
+
+# ------------------------------------------------------------ European results
+BOARD_SLUGS = {"uefa.europa": "Europa League", "uefa.europa.conf": "Conference League"}
+TRAIN_SLUGS = {
+    "uefa.champions": "Champions League",
+    **BOARD_SLUGS,
+    "uefa.champions_qual": "Champions League qualifying",
+    "uefa.europa_qual": "Europa League qualifying",
+    "uefa.europa.conf_qual": "Conference League qualifying",
+}
+ESPN_CACHE = data.DATA_DIR / "espn"
+
+
+def _month_payload(slug: str, month: str, current: str, refresh_current: bool) -> dict:
+    """A scoreboard month. Finished months are kept on disk for good; the
+    current month always comes from ESPN (re-read when `refresh_current`)."""
+    path = ESPN_CACHE / f"{slug}_{month}.json"
+    if month < current and path.exists():
+        return json.loads(path.read_text())
+    if month >= current and refresh_current:
+        intl_fixtures._cache.pop((slug, month), None)
+    payload = intl_fixtures._get(slug, month)
+    if month < current:
+        ESPN_CACHE.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload))
+    return payload
+
+
+def european_results(start: pd.Timestamp, end: pd.Timestamp,
+                     refresh_current: bool = False) -> tuple[pd.DataFrame, list[str]]:
+    """Finished European matches between `start` and `end` with 90-minute
+    scores (data.COLUMNS + event_id, qualifier), and warnings for months that
+    could not be loaded."""
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    start = start if start.tzinfo else start.tz_localize("UTC")
+    end = end if end.tzinfo else end.tz_localize("UTC")
+    current = end.strftime("%Y%m")
+    rows, warnings = [], []
+    for slug, label in TRAIN_SLUGS.items():
+        for month in intl_fixtures._months(start, end):
+            try:
+                payload = _month_payload(slug, month, current, refresh_current)
+            except Exception as exc:
+                warnings.append(f"UEFA: could not load {slug} {month}: {exc}")
+                continue
+            for e in payload.get("events", []):
+                score = intl_fixtures.goals_90(e)
+                if score is None:
+                    continue
+                comp = (e.get("competitions") or [{}])[0]
+                sides = {c.get("homeAway"): c for c in comp.get("competitors", [])}
+                rows.append({
+                    "date": pd.Timestamp(e["date"]).tz_convert(None),
+                    "home": sides["home"]["team"]["displayName"],
+                    "away": sides["away"]["team"]["displayName"],
+                    "hg": score[0], "ag": score[1],
+                    "neutral": bool(comp.get("neutralSite")),
+                    "competition": label,
+                    "event_id": str(e["id"]),
+                    "qualifier": slug.endswith("_qual"),
+                })
+    cols = data.COLUMNS + ["event_id", "qualifier"]
+    df = pd.DataFrame(rows, columns=cols).drop_duplicates("event_id")
+    lo, hi = start.tz_convert(None), end.tz_convert(None)
+    df = df[(df["date"] >= lo) & (df["date"] <= hi)]
+    return df.sort_values("date", kind="stable").reset_index(drop=True), warnings

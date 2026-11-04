@@ -78,3 +78,102 @@ def test_country_teams_lists_recent_teams(fake_files):
     _, _, teams = uefa.load_domestic(now=pd.Timestamp("2026-11-04"))
     assert teams["NOR"] == ["Brann", "Molde"]
     assert teams["BEL"] == ["Anderlecht", "Club Brugge"]  # last year of data only
+
+
+# ---------------------------------------------------------------- European results
+from ninty_five import intl_fixtures  # noqa: E402
+
+
+def ev(eid, date, home, away, status="STATUS_FULL_TIME", hs="1", as_="0", details=None, neutral=False):
+    comp = {"neutralSite": neutral, "competitors": [
+        {"homeAway": "home", "team": {"id": "1", "displayName": home}, "score": hs},
+        {"homeAway": "away", "team": {"id": "2", "displayName": away}, "score": as_}]}
+    if details is not None:
+        comp["details"] = details
+    return {"id": eid, "date": date, "status": {"type": {"name": status}}, "competitions": [comp]}
+
+
+def goal(team, minute):
+    return {"scoringPlay": True, "team": {"id": team}, "clock": {"displayValue": minute}}
+
+
+def sb(events):
+    return {"leagues": [{"name": "x"}], "events": events}
+
+
+EVENTS = {
+    ("uefa.europa", "202610"): sb([
+        ev("10", "2026-10-02T19:00Z", "Celtic", "Besiktas", hs="2", as_="1"),
+        ev("11", "2026-10-02T19:00Z", "Ajax", "Lyon", status="STATUS_SCHEDULED"),
+        ev("12", "2026-10-02T19:00Z", "Roma", "Porto", status="STATUS_POSTPONED"),
+    ]),
+    ("uefa.europa.conf_qual", "202608"): sb([ev("20", "2026-08-07T18:00Z", "Brann", "Riga", hs="3", as_="0")]),
+    ("uefa.europa", "202603"): sb([ev("30", "2026-03-12T20:00Z", "Celtic", "Sparta Prague", status="STATUS_FINAL_AET",
+                                      hs="2", as_="1", details=[goal("1", "30'"), goal("2", "80'"), goal("1", "101'")])]),
+}
+
+
+@pytest.fixture
+def espn(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_get(slug, month):
+        calls.append((slug, month))
+        return EVENTS.get((slug, month), sb([]))
+
+    monkeypatch.setattr(intl_fixtures, "_get", fake_get)
+    monkeypatch.setattr(uefa, "ESPN_CACHE", tmp_path)
+    return calls
+
+
+START, END = pd.Timestamp("2026-03-01", tz="UTC"), pd.Timestamp("2026-11-04", tz="UTC")
+
+
+def test_european_results_use_90_minutes(espn):
+    df, _ = uefa.european_results(START, END)
+    r = df[df["event_id"] == "30"].iloc[0]
+    assert (r.hg, r.ag) == (1, 1)  # 2-1 after extra time, 1-1 at 90 minutes
+
+
+def test_european_results_label_and_qualifier(espn):
+    df, _ = uefa.european_results(START, END)
+    q = df[df["event_id"] == "20"].iloc[0]
+    assert q.competition == "Conference League qualifying" and q.qualifier
+    e = df[df["event_id"] == "10"].iloc[0]
+    assert e.competition == "Europa League" and not e.qualifier
+    assert (e.home, e.away, e.hg, e.ag) == ("Celtic", "Besiktas", 2, 1)
+    assert list(df.columns) == data.COLUMNS + ["event_id", "qualifier"]
+
+
+def test_unfinished_events_are_dropped(espn):
+    df, _ = uefa.european_results(START, END)
+    assert set(df["event_id"]) == {"10", "20", "30"}
+
+
+def test_past_months_read_from_disk(espn):
+    uefa.european_results(START, END)
+    n = len(espn)
+    uefa.european_results(START, END)
+    again = espn[n:]
+    assert again and all(month == "202611" for _, month in again)  # only the current month is re-read
+
+
+def test_current_month_refreshed_on_request(espn):
+    uefa.european_results(START, END)
+    n = len(espn)
+    uefa.european_results(START, END, refresh_current=True)
+    assert {m for _, m in espn[n:]} == {"202611"}
+
+
+def test_failed_month_is_a_warning(espn, monkeypatch):
+    real = intl_fixtures._get
+
+    def flaky(slug, month):
+        if (slug, month) == ("uefa.champions", "202604"):
+            raise OSError("timeout")
+        return real(slug, month)
+
+    monkeypatch.setattr(intl_fixtures, "_get", flaky)
+    df, warnings = uefa.european_results(START, END)
+    assert "10" in set(df["event_id"])
+    assert warnings == ["UEFA: could not load uefa.champions 202604: timeout"]
