@@ -260,3 +260,24 @@ def test_tuning_endpoint_and_revert(client):
     assert r.status_code == 200 and r.json()["action"] == "reverted"
     assert client.post(f"/api/tuning/{log_id}/revert").status_code == 400
     assert h.tuned()[("alpha", "all")] == 0.5
+
+
+def _page(client):
+    return client.get("/").text
+
+
+def test_page_has_statistics_tab(client):
+    html = _page(client)
+    for s in ('data-tab="stats"', 'data-sub="betting"', 'data-sub="model"', 'data-sub="tuning"', 'id="tab-stats"'):
+        assert s in html
+
+
+def test_page_has_no_alpha_input(client):
+    html = _page(client)
+    assert 'id="alpha"' not in html and "tuned automatically" in html
+
+
+def test_track_record_lives_in_statistics(client):
+    html = _page(client)
+    assert html.index('id="tab-stats"') < html.index('id="track"')
+    assert html.index('id="tab-bets"') < html.index('id="tab-stats"')

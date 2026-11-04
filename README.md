@@ -212,6 +212,29 @@ seconds if it crashes. The daily 07:00 fetch runs inside it as before.
 
 To use it from your phone, see [docs/phone-access.md](docs/phone-access.md).
 
+## Statistics and tuning
+
+The **Statistics** tab has three parts:
+
+- **My betting**: profit, ROI, average return per bet, bets and stake per day,
+  profit over time against expected profit (luck vs edge), and tables by
+  league, market and odds range. Faded rows have fewer than 10 bets.
+- **Model**: per team and league, the points the model expected against what
+  happened, on every finished board match (not just your bets). A team is
+  flagged only with 15+ matches and a gap beyond two standard deviations. The
+  track record (model vs Danske Spil) lives here too.
+- **Tuning**: what ninety-five has changed about itself, and why.
+
+Each morning after the refresh, `tuning.py` tests the model weight (model vs
+Danske Spil, overall and per league once a league has 100 finished matches
+with your odds) and, monthly, the half-life of old results (walk-forward on
+the match history). A change goes live only when it beats the current value
+on the newest 30% of matches by more than its standard error, moves one small
+step (weight ±0.10 within 0.2–0.8, half-life ×/÷1.5 within 180–1095 days), and
+is logged. **Revert** undoes a change and locks that setting for 30 days.
+Logged bets keep the numbers they were placed with. The weight is no longer a
+setting in the page; Settings shows the value in use.
+
 ## Data
 
 | Data set | Source | Notes |

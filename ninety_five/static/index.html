@@ -53,9 +53,9 @@ a { color: var(--accent); }
   .topbar-inner { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
   .logo span, #settings-btn .lbl { display: none; }
   #loadboard { margin-left: auto; }
-  .tabs { order: 5; flex: 1 1 calc(100% - 56px); margin-right: 0; }
+  .tabs { order: 5; flex: 1 1 calc(100% - 104px); min-width: 0; margin-right: 0; }  /* room for ⚙ and ◐ when either wraps */
   #theme-btn { order: 6; }
-  .tab { flex: 1; min-height: 40px; }
+  .tab { flex: 1 1 auto; min-width: 0; min-height: 40px; padding: 6px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .icon-btn { min-height: 40px; min-width: 40px; }
   .chips-bar { padding: 0 12px 8px; }
   .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
@@ -64,7 +64,7 @@ a { color: var(--accent); }
   button.small { min-height: 40px; padding: 6px 12px; }
   .logbox input { min-height: 40px; }
   .cell input { min-height: 40px; }
-  .kpis { grid-template-columns: 1fr 1fr; }
+  main .kpis { grid-template-columns: 1fr 1fr; }  /* main: beats the base .kpis rule further down */
   input, select { font-size: 16px; }  /* below 16px iPhones zoom in on focus */
 }
 .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
@@ -97,6 +97,26 @@ tr.rec td { background: var(--good-bg); }
 .kpi { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
 .kpi b { display: block; font-size: 18px; margin-top: 2px; }
 .kpi span { color: var(--muted); font-size: 12px; }
+
+/* statistics */
+body[data-tab="stats"] .chips-bar { display: none; }
+.subtabs { flex-wrap: wrap; }
+.faded { opacity: .45; }
+.chart-box { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px 4px; margin-bottom: 12px; }
+.chart-box .legend { font-size: 11px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
+.chart-box .legend i { display: inline-block; width: 16px; height: 0; border-top: 1.5px solid var(--accent); vertical-align: middle; margin-right: 4px; }
+.chart-box .legend i.exp { border-top: 1.5px dashed var(--muted); }
+.chart-box .legend i.dot { width: 7px; height: 7px; border: none; border-radius: 50%; background: var(--warn); }
+.chart-box .legend i.bar { width: 10px; height: 8px; border: none; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
+svg.chart text { fill: var(--muted); font-size: 11px; }
+.stats-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.stats-grid.tables { grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); }
+.verdict { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+.verdict.flag { background: var(--warn-bg); color: var(--warn); }
+.prog { height: 6px; background: var(--raised); border-radius: 3px; overflow: hidden; min-width: 80px; }
+.prog i { display: block; height: 100%; background: var(--accent); }
+td.wrap { white-space: normal; }
 
 /* summary bar */
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
@@ -183,6 +203,7 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
     <nav class="tabs" role="tablist">
       <button class="tab" role="tab" data-tab="matches">Matches</button>
       <button class="tab" role="tab" data-tab="bets">Bet log <span class="n" id="bets-count"></span></button>
+      <button class="tab" role="tab" data-tab="stats">Statistics</button>
     </nav>
     <button class="icon-btn primary" id="loadboard" title="Fetch the latest fixtures and results">↻ Refresh</button>
     <button class="icon-btn" id="settings-btn" title="Settings">⚙<span class="lbl"> Settings</span></button>
@@ -199,7 +220,7 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
       <div><label>Next days</label><input id="days" type="number" value="7" min="1" max="30"></div>
       <div><label>Min edge for the list (%)</label><input id="boardedge" type="number" value="8" step="1"></div>
       <div><label>Bankroll (kr)</label><input id="bankroll" type="number" value="1000"></div>
-      <div><label>Model weight α (0 = market, 1 = model)</label><input id="alpha" type="number" step="0.05" value="0.5"></div>
+      <div><label>Model weight (model vs Danske Spil)</label><div id="alpha-info" style="padding:6px 0">0.50, tuned automatically. See Statistics → Tuning.</div></div>
       <div><label>Kelly fraction</label><input id="kelly" type="number" step="0.05" value="0.25"></div>
       <div><label>Max stake (% bankroll)</label><input id="maxstake" type="number" step="0.5" value="3"></div>
       <div><label>Min edge to bet (EV %)</label><input id="minedge" type="number" step="0.5" value="3"></div>
@@ -224,10 +245,25 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
     <div class="scroll"><table id="bets"></table></div>
   </section>
 
+  </div>
+
+  <div id="tab-stats" class="tabpane" hidden>
   <section>
-    <h2>Track record</h2>
-    <p class="muted" id="track-info">How the model and Danske Spil did on finished board matches. Uses the league selected above.</p>
-    <div id="track"></div>
+    <div class="board-head"><h2>Statistics</h2>
+      <div class="chips subtabs" role="tablist">
+        <button class="chip" data-sub="betting">My betting</button>
+        <button class="chip" data-sub="model">Model</button>
+        <button class="chip" data-sub="tuning">Tuning</button>
+      </div>
+    </div>
+    <div id="sub-betting" class="subpane"></div>
+    <div id="sub-model" class="subpane" hidden>
+      <div id="model-insight"></div>
+      <h3 class="sub" style="margin-top:16px">Track record</h3>
+      <p class="muted" id="track-info">How the model and Danske Spil did on finished board matches.</p>
+      <div id="track"></div>
+    </div>
+    <div id="sub-tuning" class="subpane" hidden></div>
   </section>
   </div>
 </main>
@@ -284,7 +320,7 @@ async function api(path, opts = {}) {
 
 function settings() {
   return {
-    bankroll: +$("bankroll").value, alpha: +$("alpha").value, kelly_fraction: +$("kelly").value,
+    bankroll: +$("bankroll").value, kelly_fraction: +$("kelly").value,
     max_stake_pct: +$("maxstake").value / 100, min_edge: +$("minedge").value / 100,
   };
 }
@@ -585,6 +621,7 @@ function renderResult(r) {
   if (r.selections.some(s => s.p_market == null)) notes.push("Rows without a market probability come from an incomplete market (enter every outcome to strip the margin). They use the model only and are less reliable.");
   const mine = openBetsFor({ key: open && open.fixture ? open.fixture.key : null, dataset: open ? open.dataset : null, home: r.home, away: r.away });
   if (mine.length) notes.push(`Your open bets on this match: ${mine.map(betLine).join(", ")}.`);
+  if (r.alpha) notes.push(`Blend uses model weight ${num(r.alpha.value)} (${alphaScope(r.alpha.scope)}), tuned automatically.`);
   const sel = r.selections.length ? `<div class="scroll"><table>
       <tr><th>Selection</th><th>Odds</th><th>Model</th><th>Market (no margin)</th><th>Blend</th><th>Fair odds</th><th>EV</th><th>Stake</th><th></th></tr>
       ${r.selections.map((s, i) => `<tr class="${s.recommended ? "rec" : ""}">
@@ -663,10 +700,10 @@ const GROUP_NAMES = { "1X2": "1X2", "OU25": "Over/Under 2.5" };
 
 async function loadTrack() {
   let r;
-  try { r = await api(`/api/track-record${league === "All" ? "" : `?competition=${encodeURIComponent(league)}`}`); }
+  try { r = await api("/api/track-record"); }
   catch (e) { $("track").innerHTML = `<div class="note">${esc(e.message)}</div>`; return; }
   const s1 = r.summary["1X2"];
-  $("track-info").textContent = `How the model and Danske Spil did on finished board matches${league === "All" ? "" : ` (${league})`}. ` +
+  $("track-info").textContent = "How the model and Danske Spil did on finished board matches. " +
     "Log loss: lower is better. Closer: which of the two gave the actual result more probability.";
   if (!s1.n) {
     $("track").innerHTML = `<p class="muted">No finished matches yet. Results appear here after the matches you've seen on the board are played.</p>`;
@@ -828,18 +865,197 @@ async function loadBets() {
     : `<tr><td class="muted">No bets logged yet.</td></tr>`;
 }
 
+// ------------------------------------------------------------- statistics
+const shortDate = iso => new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString([], { day: "numeric", month: "short" });
+const kr = (x, sign = false) => x == null ? "–" : `${sign && x > 0 ? "+" : ""}${num(x, 0)} kr`;
+const signed = x => `<span class="${x >= 0 ? "pos" : "neg"}">${kr(x, true)}</span>`;
+const alphaScope = s => s === "all" ? "all leagues" : s === "default" ? "default" : s;
+let statsSub = store.get("statsSub") || "betting";
+
+function showSub(name) {
+  if (!["betting", "model", "tuning"].includes(name)) name = "betting";
+  statsSub = name; store.set("statsSub", name);
+  document.querySelectorAll("[data-sub]").forEach(b => b.classList.toggle("active", b.dataset.sub === name));
+  for (const n of ["betting", "model", "tuning"]) $(`sub-${n}`).hidden = n !== name;
+  loadStats();
+}
+
+function loadStats() {
+  document.querySelectorAll("[data-sub]").forEach(b => b.classList.toggle("active", b.dataset.sub === statsSub));
+  for (const n of ["betting", "model", "tuning"]) $(`sub-${n}`).hidden = n !== statsSub;
+  const fail = id => e => { $(id).innerHTML = `<div class="note">${esc(e.message)}</div>`; };
+  if (statsSub === "betting") api("/api/stats/betting").then(renderBetting).catch(fail("sub-betting"));
+  if (statsSub === "model") { api("/api/stats/model").then(renderModel).catch(fail("model-insight")); loadTrack(); }
+  if (statsSub === "tuning") api("/api/tuning").then(renderTuning).catch(fail("sub-tuning"));
+}
+
+// Thin-line SVG charts in theme colours; the viewBox scales with the width.
+let W = 600;  // set per render to the chart box's width, so text stays readable on a phone
+const H = 170, PADL = 46, PADR = 8, PADT = 8, PADB = 22;
+function scaleY(lo, hi) {
+  if (lo === hi) { lo -= 1; hi += 1; }
+  return v => PADT + (H - PADT - PADB) * (1 - (v - lo) / (hi - lo));
+}
+function profitChart(curve) {
+  if (!curve.length) return `<p class="muted">No settled bets yet. The profit line starts with the first result.</p>`;
+  const vals = curve.flatMap(c => [c.pnl_cum, c.expected_cum]).concat(0);
+  const lo = Math.min(...vals), hi = Math.max(...vals), y = scaleY(lo, hi);
+  const x = i => PADL + (W - PADL - PADR) * (curve.length === 1 ? 0.5 : i / (curve.length - 1));
+  const line = (k, extra) => `<polyline fill="none" vector-effect="non-scaling-stroke" stroke-width="1.5" ${extra}
+    points="${curve.map((c, i) => `${x(i).toFixed(1)},${y(c[k]).toFixed(1)}`).join(" ")}"/>`;
+  return `<div class="chart-box"><div class="legend"><span><i></i>Actual profit</span><span><i class="exp"></i>Expected profit</span>
+      <span>${curve.length} settled bets</span></div>
+    <svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Profit over time">
+      <line x1="${PADL}" x2="${W - PADR}" y1="${y(0)}" y2="${y(0)}" stroke="var(--border)" stroke-width="1"/>
+      <text x="${PADL - 6}" y="${y(hi) + 4}" text-anchor="end">${num(hi, 0)}</text>
+      <text x="${PADL - 6}" y="${y(0) + 4}" text-anchor="end">0</text>
+      ${lo < 0 ? `<text x="${PADL - 6}" y="${y(lo) + 4}" text-anchor="end">${num(lo, 0)}</text>` : ""}
+      <text x="${PADL}" y="${H - 4}">${shortDate(curve[0].date)}</text>
+      <text x="${W - PADR}" y="${H - 4}" text-anchor="end">${shortDate(curve[curve.length - 1].date)}</text>
+      ${line("expected_cum", 'stroke="var(--muted)" stroke-dasharray="5 4"')}
+      ${line("pnl_cum", 'stroke="var(--accent)"')}
+    </svg></div>`;
+}
+function dayChart(days) {
+  if (!days.length) return "";
+  const maxS = Math.max(...days.map(d => d.stake)), maxB = Math.max(...days.map(d => d.bets));
+  const ys = scaleY(0, maxS), yb = scaleY(0, maxB);
+  const slot = (W - PADL - PADR) / days.length, bw = Math.max(2, Math.min(28, slot * 0.6));
+  const cx = i => PADL + slot * (i + 0.5);
+  return `<div class="chart-box"><div class="legend"><span><i class="bar"></i>Stake per day (kr)</span>
+      <span><i class="dot"></i>Bets per day (right scale)</span></div>
+    <svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Stake and bets per day">
+      <line x1="${PADL}" x2="${W - PADR}" y1="${ys(0)}" y2="${ys(0)}" stroke="var(--border)" stroke-width="1"/>
+      <text x="${PADL - 6}" y="${ys(maxS) + 4}" text-anchor="end">${num(maxS, 0)}</text>
+      <text x="${PADL - 6}" y="${ys(0) + 4}" text-anchor="end">0</text>
+      <text x="${W - PADR}" y="${yb(maxB) - 4}" text-anchor="end">${maxB} bets</text>
+      ${days.map((d, i) => `<rect x="${(cx(i) - bw / 2).toFixed(1)}" y="${ys(d.stake).toFixed(1)}" width="${bw.toFixed(1)}"
+        height="${(ys(0) - ys(d.stake)).toFixed(1)}" fill="color-mix(in srgb, var(--accent) 45%, transparent)"><title>${shortDate(d.date)}: ${num(d.stake, 0)} kr, ${d.bets} bets</title></rect>`).join("")}
+      ${days.map((d, i) => `<circle cx="${cx(i).toFixed(1)}" cy="${yb(d.bets).toFixed(1)}" r="3" fill="var(--warn)"/>`).join("")}
+      <text x="${PADL}" y="${H - 4}">${shortDate(days[0].date)}</text>
+      <text x="${W - PADR}" y="${H - 4}" text-anchor="end">${shortDate(days[days.length - 1].date)}</text>
+    </svg></div>`;
+}
+function groupTable(title, col, rows) {
+  if (!rows.length) return "";
+  return `<div><h3 class="sub">${title}</h3><div class="scroll"><table>
+    <tr><th>${col}</th><th>Bets</th><th>Staked</th><th>Profit</th><th>ROI</th><th>Expected</th></tr>
+    ${rows.map(g => `<tr class="${g.thin ? "faded" : ""}" ${g.thin ? 'title="Fewer than 10 bets: too few to read anything into"' : ""}>
+      <td>${esc(g.label)}</td><td>${g.n}</td><td>${kr(g.staked)}</td><td>${signed(g.pnl)}</td><td>${pct(g.roi)}</td><td>${kr(g.expected_pnl, true)}</td></tr>`).join("")}
+  </table></div></div>`;
+}
+function renderBetting(s) {
+  const t = s.tiles;
+  const avail = $("sub-betting").clientWidth || 600;  // two charts side by side above ~700px
+  W = Math.round(Math.max(260, Math.min(640, (avail >= 700 ? (avail - 12) / 2 : avail) - 22)));
+  const tiles = [
+    ["Settled bets", `${t.n_settled} <small class="muted">(${t.n_open} open)</small>`],
+    ["Profit", signed(t.pnl)],
+    ["ROI", pct(t.roi)],
+    ["Avg return per bet", t.avg_return == null ? "–" : kr(t.avg_return, true)],
+    ["Expected profit (settled)", kr(t.expected_pnl, true)],
+    ["Bets per day", t.bets_per_day == null ? "–" : num(t.bets_per_day, 1)],
+    ["Stake per day", t.stake_per_day == null ? "–" : kr(t.stake_per_day)],
+    ["Avg CLV", t.avg_clv == null ? "–" : `${pct(t.avg_clv)} <small class="muted">(n=${t.n_clv})</small>`],
+  ].map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join("");
+  const few = t.n_settled < 10 ? `<p class="muted">Only ${t.n_settled} settled bets so far: these numbers are mostly luck until there are a few dozen. Expected profit is what the edge alone should have made.</p>` : "";
+  $("sub-betting").innerHTML = `<div class="kpis">${tiles}</div>${few}
+    <div class="stats-grid"><div>${profitChart(s.curve)}</div><div>${dayChart(s.days)}</div></div>
+    <div class="stats-grid tables">${groupTable("By league", "League", s.by_league)}${groupTable("By market", "Market", s.by_market)}${groupTable("By odds", "Odds", s.by_odds)}</div>
+    <p class="muted" style="font-size:12px">Per-day figures are averages over days you placed bets. Tables cover settled bets; faded rows have fewer than 10.</p>`;
+}
+
+const VERDICT = { "overrates": "model overrates", "underrates": "model underrates", "in line": "in line", "too few": "too few" };
+function renderModel(m) {
+  if (!m.teams.length) { $("model-insight").innerHTML = `<p class="muted">No finished board matches yet.</p>`; return; }
+  const row = t => `<tr class="${t.verdict === "too few" ? "faded" : ""}"><td>${esc(t.team)}</td><td>${t.n}</td>
+    <td>${num(t.exp_pts, 1)}</td><td>${t.pts}</td><td>${num(t.xg_for, 1)} / ${num(t.xg_against, 1)}</td>
+    <td>${t.goals_for} / ${t.goals_against}</td>
+    <td><span class="verdict ${["overrates", "underrates"].includes(t.verdict) ? "flag" : ""}">${VERDICT[t.verdict]}</span></td></tr>`;
+  const head = `<tr><th>Team</th><th>Matches</th><th>Expected pts</th><th>Actual pts</th><th>xG for / against</th><th>Goals for / against</th><th></th></tr>`;
+  const top = m.teams.slice(0, 15), rest = m.teams.slice(15);
+  const lg = m.leagues.map(l => `<tr class="${l.n < 15 ? "faded" : ""}"><td>${esc(l.competition)}</td><td>${l.n}</td>
+    <td>${num(l.exp_pts_home, 1)}</td><td>${l.pts_home}</td><td>${num(l.track.model_logloss, 3)}</td>
+    <td>${l.track.n_compared}</td><td>${l.track.n_compared ? num(l.track.market_logloss_compared, 3) : "–"}</td>
+    <td>${l.track.n_compared ? pct(l.track.model_closer, 0) : "–"}</td></tr>`).join("");
+  $("model-insight").innerHTML = `
+    <h3 class="sub">Teams: does the model misjudge them?</h3>
+    <p class="muted" style="font-size:12px">All finished board matches, not just the ones you bet on. A team is flagged only with 15+ matches and a gap of more than two standard deviations; faded rows have too few matches to judge.</p>
+    <div class="scroll"><table>${head}${top.map(row).join("")}</table></div>
+    ${rest.length ? `<details style="margin-top:6px"><summary>All teams (${m.teams.length})</summary><div class="scroll"><table>${head}${rest.map(row).join("")}</table></div></details>` : ""}
+    <h3 class="sub" style="margin-top:16px">Leagues</h3>
+    <div class="scroll"><table><tr><th>League</th><th>Matches</th><th>Home exp. pts</th><th>Home pts</th><th>Model log loss</th>
+      <th>With your odds</th><th>Danske Spil log loss</th><th>Model closer</th></tr>${lg}</table></div>`;
+}
+
+const SETTING = { alpha: "Model weight (model vs Danske Spil)", half_life: "Old results fade (half-life)" };
+const scopeName = (setting, scope) => setting === "half_life" ? "club leagues" : alphaScope(scope);
+const settingValue = (setting, v) => v == null ? "–" : setting === "half_life" ? `${num(v, 0)} days` : num(v);
+function renderTuning(t) {
+  const settings = t.settings.map(s => `<tr><td>${SETTING[s.setting]}</td><td>${esc(scopeName(s.setting, s.scope))}</td>
+    <td>${settingValue(s.setting, s.value)}</td><td class="muted">${s.default ? "default" : "tuned"}</td></tr>`).join("");
+  const last = p => p.last_test ? `${p.last_action} ${shortDate(p.last_test)}` : "not tested yet";
+  const progress = t.progress.map(p => p.needed
+    ? `<tr><td>${SETTING[p.setting]}</td><td>${esc(scopeName(p.setting, p.scope))}</td>
+        <td><div class="prog"><i style="width:${Math.min(100, 100 * p.n / p.needed)}%"></i></div></td>
+        <td>${p.n} of ${p.needed}</td><td class="muted">${last(p)}</td></tr>`
+    : `<tr><td>${SETTING[p.setting]}</td><td>${esc(scopeName(p.setting, p.scope))}</td><td colspan="2" class="wrap muted">Tested monthly on the full match history</td>
+        <td class="muted">${last(p)}</td></tr>`).join("");
+  const log = t.log.length ? t.log.map(r => `<tr><td>${shortDate(r.at)}</td><td>${SETTING[r.setting]}</td><td>${esc(scopeName(r.setting, r.scope))}</td>
+      <td>${settingValue(r.setting, r.old)} → ${settingValue(r.setting, r.new)}</td><td>${r.action}</td>
+      <td class="wrap">${r.loss_old != null ? `log loss ${num(r.loss_old, 4)} → ${num(r.loss_new, 4)} (± ${num(r.se, 4)}), n=${r.n}` : esc(r.note || "")}</td>
+      <td>${r.action === "changed" && !r.reverted_at ? `<span data-revert="${r.id}"><button class="small secondary" onclick="askRevert(${r.id})">Revert</button></span>`
+        : r.reverted_at ? '<span class="muted">reverted</span>' : ""}</td></tr>`).join("")
+    : `<tr><td class="muted" colspan="7">No tests yet. The first runs after the morning refresh once there's enough evidence.</td></tr>`;
+  $("sub-tuning").innerHTML = `
+    <p class="muted" style="font-size:12px">Each morning after the refresh, ninety-five tests whether a different setting would have predicted finished matches better. A change goes live only if it's clearly better on matches it wasn't chosen on, and moves one small step at a time. Revert undoes a change and locks that setting for 30 days.</p>
+    <h3 class="sub">In use</h3><div class="scroll"><table><tr><th>Setting</th><th>Scope</th><th>Value</th><th></th></tr>${settings}</table></div>
+    <h3 class="sub" style="margin-top:16px">Evidence for the next test</h3>
+    <div class="scroll"><table><tr><th>Setting</th><th>Scope</th><th></th><th>Matches</th><th>Last test</th></tr>${progress}</table></div>
+    <p class="muted" style="font-size:12px">${t.deferred.map(d => `${esc(d)}: not yet active (needs more matches per team).`).join(" ")}</p>
+    <h3 class="sub" style="margin-top:16px">Change log</h3>
+    <div class="scroll"><table><tr><th>Date</th><th>Setting</th><th>Scope</th><th>Old → new</th><th>Result</th><th>Test</th><th></th></tr>${log}</table></div>`;
+}
+function askRevert(id) {
+  const el = document.querySelector(`[data-revert="${id}"]`);
+  el.innerHTML = `Revert? <button class="small" onclick="doRevert(${id})">Yes</button> <button class="small secondary" onclick="loadStats()">No</button>`;
+}
+async function doRevert(id) {
+  try { await api(`/api/tuning/${id}/revert`, { method: "POST" }); }
+  catch (e) { alertNote("sub-tuning", e.message); return; }
+  loadStats(); loadAlphaInfo();
+}
+function alertNote(id, msg) { $(id).insertAdjacentHTML("afterbegin", `<div class="note">${esc(msg)}</div>`); }
+async function loadAlphaInfo() {
+  try {
+    const t = await api("/api/tuning");
+    const a = t.settings.filter(s => s.setting === "alpha");
+    const overall = a.find(s => s.scope === "all"), leagues = a.filter(s => s.scope !== "all");
+    $("alpha-info").textContent = `${num(overall.value)}${overall.default ? " (default)" : ""}, tuned automatically. See Statistics → Tuning.` +
+      (leagues.length ? ` Leagues: ${leagues.map(s => `${s.scope} ${num(s.value)}`).join(", ")}.` : "");
+  } catch { /* keep the static text */ }
+}
+
 // ------------------------------------------------------------------ init
 function showTab(name) {
-  if (!["matches", "bets"].includes(name)) name = "matches";
+  if (!["matches", "bets", "stats"].includes(name)) name = "matches";
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
   $("tab-matches").hidden = name !== "matches";
   $("tab-bets").hidden = name !== "bets";
+  $("tab-stats").hidden = name !== "stats";
+  document.body.dataset.tab = name;
   store.set("tab", name);
+  if (name === "stats") loadStats();
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => { showTab(t.dataset.tab); window.scrollTo(0, 0); });
 showTab(store.get("tab"));
 // The daily fetch settles bets while the page sits open: reload the log on return.
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { loadBets(); loadTrack(); } });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  loadBets(); loadAlphaInfo();
+  if (!$("tab-stats").hidden) loadStats();
+});
+document.querySelectorAll("[data-sub]").forEach(b => b.onclick = () => showSub(b.dataset.sub));
 
 $("loadboard").onclick = refreshBoard;
 $("settings-btn").onclick = () => { const p = $("settings"); p.hidden = !p.hidden; };
@@ -850,7 +1066,7 @@ $("theme-btn").onclick = () => {
   store.set("theme", next); applyTheme(next);
 };
 // Settings and the board edge change the numbers in an open match.
-["bankroll", "alpha", "kelly", "maxstake", "minedge", "boardedge"].forEach(id =>
+["bankroll", "kelly", "maxstake", "minedge", "boardedge"].forEach(id =>
   $(id).addEventListener("change", () => { if (open) evaluate(); }));
 $("boardedge").addEventListener("change", showStored);  // min odds are derived; no refetch
 $("days").addEventListener("change", () => +$("days").value > fetchedDays ? refreshBoard() : showStored());
@@ -861,8 +1077,8 @@ $("bookmarklet").onclick = e => { e.preventDefault(); showImportNote("Drag the b
 const boardReady = initBoard();
 handleImport();
 window.addEventListener("hashchange", handleImport);
-loadTrack();
 loadBets();
+loadAlphaInfo();
 </script>
 </body>
 </html>
