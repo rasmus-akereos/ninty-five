@@ -97,9 +97,10 @@ def test_build_board_raises_only_when_all_sources_fail(monkeypatch):
     monkeypatch.setattr(service, "club_board", _fail)
     monkeypatch.setattr(service, "intl_board", _fail)
     monkeypatch.setattr(service, "cup_board", _fail)
+    monkeypatch.setattr(service, "uefa_board", _fail)
     monkeypatch.setattr(service, "league_board", _ok("fdcu:x"))
     rows, warnings = service.build_board(7)
-    assert [r["key"] for r in rows] == ["fdcu:x"] and len(warnings) == 3
+    assert [r["key"] for r in rows] == ["fdcu:x"] and len(warnings) == 4
     monkeypatch.setattr(service, "league_board", _fail)
     with pytest.raises(RuntimeError):
         service.build_board(7)

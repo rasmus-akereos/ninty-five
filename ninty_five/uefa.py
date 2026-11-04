@@ -297,3 +297,41 @@ def load_uefa(refresh_current: bool = False, now: pd.Timestamp | None = None,
     df = pd.concat([dom, eu[data.COLUMNS]], ignore_index=True).sort_values("date", kind="stable")
     last_resolution, last_inputs = res, (teams, clubs)
     return df.reset_index(drop=True)[data.COLUMNS], groups, res
+
+
+# ------------------------------------------------------------ the board
+THIN_MATCHES = 10
+BOARD_COLUMNS = ["key", "dataset", "competition", "kickoff", "home", "away", "neutral", "european_only"]
+
+
+def upcoming(days: int = 7, now: pd.Timestamp | None = None) -> tuple[pd.DataFrame, list[str]]:
+    """Europa and Conference League matches in the window between clubs the
+    UEFA model knows, with model names, plus warnings for clubs of covered
+    leagues that couldn't be matched. A European-only club with fewer than
+    THIN_MATCHES matches is effectively unknown: its match is left out."""
+    from . import service  # service imports this module
+
+    now = now or pd.Timestamp.now(tz="UTC")
+    _, model, _ = service._cached("UEFA")  # also sets last_resolution
+    res = last_resolution or Resolution()
+    fx = intl_fixtures.upcoming(days, now, slugs=list(BOARD_SLUGS), club=True)
+    new = (set(fx["home"]) | set(fx["away"])) - set(res.mapping) - res.excluded
+    extra = resolve_clubs(new, *last_inputs) if new and last_inputs else Resolution()
+    mapping = {**res.mapping, **extra.mapping}
+    european_only = res.european_only | extra.european_only
+    known = set(model.teams)
+    rows = []
+    for f in fx.itertuples():
+        names = [mapping.get(n) for n in (f.home, f.away)]
+        if any(n is None or n not in known for n in names):
+            continue
+        euro = [n for n in names if n in european_only]
+        if any(model.n_matches.get(n, 0) < THIN_MATCHES for n in euro):
+            continue
+        rows.append({"key": f"espn:{f.event_id}", "dataset": "UEFA", "competition": BOARD_SLUGS[f.slug],
+                     "kickoff": f.kickoff, "home": names[0], "away": names[1], "neutral": bool(f.neutral),
+                     "european_only": bool(euro)})
+    return pd.DataFrame(rows, columns=BOARD_COLUMNS), extra.warnings
+
+
+REAL_UPCOMING = upcoming  # tests replace `upcoming` with an offline stub

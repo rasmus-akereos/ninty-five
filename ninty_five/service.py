@@ -205,11 +205,38 @@ def cup_board(days: int, now: pd.Timestamp | None = None) -> tuple[list[dict], l
     return rows, warnings
 
 
+def uefa_board(days: int, now: pd.Timestamp | None = None) -> tuple[list[dict], list[str]]:
+    """Europa and Conference League matches (ESPN), priced by the UEFA model.
+    Returns (rows, warnings about unmatched clubs)."""
+    fx, warnings = uefa.upcoming(days, now)
+    if fx.empty:
+        return [], warnings
+    _, model, df = _cached("UEFA")
+    rows = []
+    for f in fx.itertuples():
+        row = {
+            "key": f.key,
+            "dataset": "UEFA",
+            "match_id": None,
+            "kickoff": f.kickoff.isoformat(),
+            "competition": f.competition,
+            "detail": "",
+            "stage": "",
+            "home": f.home,
+            "away": f.away,
+            "neutral": bool(f.neutral),
+            "european_only": bool(f.european_only),
+        }
+        rows.append(_priced(model, df, row))
+    return rows, warnings
+
+
 BOARD_SOURCES = (
     ("Club fixtures", "club_board"),
     ("National-team fixtures", "intl_board"),
     ("Lower-league fixtures", "league_board"),
     ("Cup fixtures", "cup_board"),
+    ("European fixtures", "uefa_board"),
 )
 
 
@@ -273,7 +300,8 @@ def update_results(history, bets, now: pd.Timestamp) -> list[int]:
     if intl:
         try:
             since = min(pd.Timestamp(p["kickoff"]) for p in intl)
-            slugs = intl_fixtures.SLUGS + list(cup_fixtures.ESPN_SLUGS)  # national teams, cups, Superliga
+            # national teams, cups, Superliga, Europa and Conference League
+            slugs = intl_fixtures.SLUGS + list(cup_fixtures.ESPN_SLUGS) + list(uefa.BOARD_SLUGS)
             res = {r.event_id: r for r in intl_fixtures.results(since, now, slugs=slugs).itertuples()}
             for p in intl:
                 r = res.get(p["key"][5:])
