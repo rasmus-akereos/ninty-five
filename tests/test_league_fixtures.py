@@ -143,3 +143,15 @@ def test_division_teams_unavailable_fails_the_source(monkeypatch):
     monkeypatch.setattr(league_fixtures, "_fetch", lambda url: SAMPLE_MAIN)
     with pytest.raises(OSError):
         league_fixtures.upcoming(7, now=pd.Timestamp("2026-11-03 00:00", tz="UTC"))
+
+
+def test_match_result_finds_result_under_changed_spelling():
+    # The results file switched "Oxford" to "Oxford Utd" for one match; the
+    # board stored the earlier spelling.
+    res = _res([("2026-10-31", "Oxford", "Luton", 1, 0), ("2026-11-04", "Oxford Utd", "Reading", 2, 0)])
+    assert league_fixtures.match_result(res, "Oxford", "Reading", pd.Timestamp("2026-11-04T19:45Z")) == (2, 0)
+
+
+def test_match_result_prefers_exact_names_over_lenient():
+    res = _res([("2026-11-04", "Oxford City", "Reading", 5, 5), ("2026-11-04", "Oxford", "Reading", 2, 0)])
+    assert league_fixtures.match_result(res, "Oxford", "Reading", pd.Timestamp("2026-11-04T19:45Z")) == (2, 0)

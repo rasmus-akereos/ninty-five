@@ -114,6 +114,14 @@ def resolve_name(name: str, division: str, teams) -> str | None:
     return hits.pop() if len(hits) == 1 else None
 
 
+def _same_club(a: str, b: str) -> bool:
+    """Lenient name match, as resolve_name uses it (reserve sides kept apart)."""
+    if _reserve(a) != _reserve(b):
+        return False
+    na, nb = _norm(a), _norm(b)
+    return na == nb or same_team(na, nb) or same_team(nb, na)
+
+
 def _division_teams_live(division: str) -> list[str]:
     res = results(division)
     return sorted(set(res["home"]) | set(res["away"]))
@@ -179,10 +187,14 @@ def match_result(res: pd.DataFrame, home: str, away: str, kickoff: pd.Timestamp,
     (so a match moved to another day still finds its result), and not before
     `not_before` (the day the match was first listed as upcoming: an earlier
     meeting of the same two teams, as after the Superliga split, is a
-    different match)."""
+    different match). When the file has no row under the exact names, a
+    lenient name match is tried: the file sometimes changes a club's
+    spelling mid-season ("Oxford" -> "Oxford Utd")."""
     k = pd.Timestamp(kickoff)
     k = k.tz_convert(None) if k.tzinfo else k
     games = res[(res["home"] == home) & (res["away"] == away)]
+    if games.empty:
+        games = res[res["home"].map(lambda n: _same_club(n, home)) & res["away"].map(lambda n: _same_club(n, away))]
     if not_before is not None:
         nb = pd.Timestamp(not_before)
         nb = nb.tz_convert(UK).tz_localize(None) if nb.tzinfo else nb
