@@ -156,6 +156,9 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
 .pill { min-width: 54px; text-align: center; background: var(--raised); border-radius: 10px; padding: 4px 8px; font-variant-numeric: tabular-nums; font-weight: 600; }
 .pill small { display: block; font-size: 10px; color: var(--muted); font-weight: 500; }
 .badge.placed { background: var(--good-bg); color: var(--good); }
+.mybets { background: var(--good-bg); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); border-radius: 10px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
+.mybets table { margin: 4px 0 0; }
+.mybets td, .mybets th { padding: 2px 10px 2px 0; border: 0; background: none; }
 .logged { color: var(--good); font-weight: 600; font-size: 12px; }
 .logbox { display: inline-flex; gap: 4px; align-items: center; }
 .logbox input { width: 5em; padding: 4px 6px; text-align: right; }
@@ -321,6 +324,16 @@ const placedBadge = f => {
   return mine.length ? `<span class="badge placed" title="${esc(mine.map(betLine).join(", "))}">bet placed</span>` : "";
 };
 const betLine = b => `${b.market} · ${num(b.stake, 0)} kr @ ${num(b.odds)}`;
+// The open bets on the folded-open match, with what each pays if it wins.
+function myBetsBox(mine) {
+  if (!mine.length) return "";
+  const staked = mine.reduce((t, b) => t + b.stake, 0);
+  const when = b => b.created ? new Date(b.created).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+  return `<div class="mybets"><b>Your bets on this match</b> <span class="muted">· ${num(staked, 0)} kr staked</span>
+    <div class="scroll"><table><tr><th>Selection</th><th>Odds</th><th>Stake</th><th>Pays if it wins</th><th>Logged</th></tr>
+    ${mine.map(b => `<tr><td>${esc(b.market)}</td><td>${num(b.odds)}</td><td>${num(b.stake, 0)} kr</td><td>${num(b.stake * b.odds, 0)} kr</td><td class="muted">${esc(when(b))}</td></tr>`).join("")}
+    </table></div></div>`;
+}
 let evalSeq = 0;
 let teamSet = new Set(); // teams of the data set loaded into the manual picker
 
@@ -656,7 +669,6 @@ function renderResult(r) {
   for (const [k, v] of Object.entries(r.margins)) notes.push(`Bookmaker margin ${k}: ${pct(v)}. This is what the model has to beat.`);
   if (r.selections.some(s => s.p_market == null)) notes.push("Rows without a market probability come from an incomplete market (enter every outcome to strip the margin). They use the model only and are less reliable.");
   const mine = openBetsFor({ key: open && open.fixture ? open.fixture.key : null, dataset: open ? open.dataset : null, home: r.home, away: r.away });
-  if (mine.length) notes.push(`Your open bets on this match: ${mine.map(betLine).join(", ")}.`);
   const ex = r.match_exposure;
   if (ex && ex.staked > 0) notes.push(ex.staked >= ex.limit
     ? `Match limit reached: ${num(ex.staked, 0)} of ${num(ex.limit, 0)} kr already on this match. Markets on one match win or lose together.`
@@ -684,6 +696,7 @@ function renderResult(r) {
     <p><b>${esc(r.home)}</b> ${num(r.xg[0])} – ${num(r.xg[1])} <b>${esc(r.away)}</b> <span class="muted">expected goals ·
       1 ${pct(r.probabilities["1"])} · X ${pct(r.probabilities["X"])} · 2 ${pct(r.probabilities["2"])} ·
       likely ${r.top_scores.slice(0, 3).map(s => s.score).join(", ")}</span></p>
+    ${myBetsBox(mine)}
     ${notes.map(n => `<div class="note">${esc(n)}</div>`).join("")}
     ${sel}`;
   $("f-result").querySelectorAll("[data-log]").forEach(b => b.onclick = () => logBet(r.selections[+b.dataset.log], b));
