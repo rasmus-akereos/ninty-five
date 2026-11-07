@@ -386,6 +386,19 @@ class HistoryStore:
                              (match_key, last)).fetchall()
         return {"fetched_at": last, "prices": {r["market"]: {"odds": r["odds"], "book": r["book"]} for r in rows}}
 
+    def sharp_before(self, match_key: str | None, before: str) -> dict[str, float]:
+        """{market: odds} of the last sharp fetch before `before` (ISO UTC)."""
+        if not match_key:
+            return {}
+        with self._conn() as c:
+            last = c.execute("SELECT MAX(fetched_at) AS t FROM sharp_prices WHERE match_key = ? AND fetched_at < ?",
+                             (match_key, before)).fetchone()["t"]
+            if last is None:
+                return {}
+            rows = c.execute("SELECT market, odds FROM sharp_prices WHERE match_key = ? AND fetched_at = ?",
+                             (match_key, last)).fetchall()
+        return {r["market"]: r["odds"] for r in rows}
+
     def log_odds_api(self, at: str, sport: str, cost: int, remaining: int | None) -> None:
         with self._conn() as c:
             c.execute("INSERT INTO odds_api_calls (at, sport, cost, remaining) VALUES (?, ?, ?, ?)",

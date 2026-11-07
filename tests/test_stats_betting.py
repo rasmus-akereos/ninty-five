@@ -61,3 +61,17 @@ def test_groups_market_odds_league():
     assert leagues["England 2"]["n"] == 1 and leagues["EUROPE"]["n"] == 4
     assert all(g["thin"] for g in s["by_league"])
     assert s["by_league"][0]["label"] == "EUROPE"  # sorted by n, largest first
+
+
+def test_vs_pinnacle_averages_bets_with_a_price_before_kickoff():
+    bets = [_b(id=1, odds=2.2, status="won", pnl=12.0), _b(id=2, odds=1.8, status="lost", pnl=-10.0),
+            _b(id=3, odds=3.0), _b(id=4, status="void", pnl=0.0)]
+    # Pinnacle's fair probability at kick-off for bets 1 and 2 (3 has none, 4 is void).
+    t = stats.betting(bets, {}, sharp_at_kickoff={1: 0.5, 2: 0.5, 4: 0.5})["tiles"]
+    assert t["n_vs_pinnacle"] == 2
+    assert t["avg_vs_pinnacle"] == pytest.approx(((2.2 * 0.5 - 1) + (1.8 * 0.5 - 1)) / 2)
+
+
+def test_vs_pinnacle_empty_without_prices():
+    t = stats.betting([_b()], {})["tiles"]
+    assert t["avg_vs_pinnacle"] is None and t["n_vs_pinnacle"] == 0

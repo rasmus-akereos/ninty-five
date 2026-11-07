@@ -202,7 +202,27 @@ def track_record(competition: str | None = None) -> dict:
 
 @app.get("/api/stats/betting")
 def stats_betting() -> dict:
-    return stats.betting(store.list(), history.competitions())
+    bets = store.list()
+    return stats.betting(bets, history.competitions(), _sharp_at_kickoff(bets))
+
+
+def _sharp_at_kickoff(bets: list[dict]) -> dict[int, float]:
+    """bet id -> Pinnacle's fair probability for its market, from the last
+    fetch before kick-off (the latest so far for matches not yet started)."""
+    out: dict[int, float] = {}
+    for b in bets:
+        if not b.get("match_key"):  # sharp prices are stored per board match
+            continue
+        kickoff = b.get("kickoff") or (history.match(b["match_key"]) or {}).get("kickoff")
+        if not kickoff:
+            continue
+        k = pd.Timestamp(kickoff)
+        k = k.tz_convert("UTC") if k.tzinfo else k.tz_localize("UTC")  # fetched_at is ISO UTC
+        prices = history.sharp_before(b["match_key"], k.isoformat(timespec="seconds"))
+        p = market_probabilities(prices).get(b["market"])
+        if p is not None:
+            out[b["id"]] = p
+    return out
 
 
 @app.get("/api/stats/model")

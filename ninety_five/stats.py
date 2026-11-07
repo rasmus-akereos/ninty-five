@@ -63,8 +63,15 @@ def _groups(settled: list[dict], label) -> list[dict]:
     return sorted(out, key=lambda g: (-g["n"], g["label"]))
 
 
-def betting(bets: list[dict], competitions: dict[str, str]) -> dict:
-    """bets: rows from BetStore.list(); competitions: match_key -> competition."""
+def betting(bets: list[dict], competitions: dict[str, str],
+            sharp_at_kickoff: dict[int, float] | None = None) -> dict:
+    """bets: rows from BetStore.list(); competitions: match_key -> competition;
+    sharp_at_kickoff: bet id -> Pinnacle's fair probability for the bet's
+    market from the last fetch before kick-off. A bet's figure is odds * p - 1:
+    how much better its price was than the sharp market's fair price."""
+    sharp_at_kickoff = sharp_at_kickoff or {}
+    vs_sharp = [b["odds"] * sharp_at_kickoff[b["id"]] - 1 for b in bets
+                if b["status"] != "void" and b["id"] in sharp_at_kickoff]
     settled = [b for b in bets if b["status"] in SETTLED]
     staked = sum(b["stake"] for b in settled)
     pnl = sum(b["pnl"] or 0.0 for b in settled)
@@ -100,6 +107,8 @@ def betting(bets: list[dict], competitions: dict[str, str]) -> dict:
             "stake_per_day": round(sum(d["stake"] for d in day_rows) / len(day_rows), 2) if day_rows else None,
             "avg_clv": round(sum(clv) / len(clv), 4) if clv else None,
             "n_clv": len(clv),
+            "avg_vs_pinnacle": round(sum(vs_sharp) / len(vs_sharp), 4) if vs_sharp else None,
+            "n_vs_pinnacle": len(vs_sharp),
         },
         "days": day_rows,
         "curve": curve,

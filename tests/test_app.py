@@ -312,3 +312,16 @@ def test_evaluate_uses_stored_sharp_prices(client):
     # Without a board match there are no sharp prices.
     r = client.post("/api/evaluate", json={**body, "match_key": None}).json()
     assert r["sharp"] is None and all(s["basis"] != "sharp" for s in r["selections"])
+
+
+def test_stats_betting_compares_bets_with_pinnacle_at_kickoff(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    kickoff = app_mod.history.match("fd:1")["kickoff"]
+    before = (pd.Timestamp(kickoff) - pd.Timedelta(hours=2)).isoformat(timespec="seconds")
+    app_mod.history.save_sharp("fd:1", before, {"1": {"odds": 2.0, "book": "pinnacle"},
+                                                "X": {"odds": 4.0, "book": "pinnacle"},
+                                                "2": {"odds": 4.0, "book": "pinnacle"}})  # no margin: 1 = 50%
+    app_mod.store.add({"dataset": "EUROPE", "home": "A", "away": "B", "market": "1", "odds": 2.2, "stake": 10,
+                       "match_key": "fd:1", "kickoff": kickoff})
+    t = client.get("/api/stats/betting").json()["tiles"]
+    assert t["n_vs_pinnacle"] == 1 and t["avg_vs_pinnacle"] == pytest.approx(0.1)

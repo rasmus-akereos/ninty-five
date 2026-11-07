@@ -233,3 +233,14 @@ def test_reverting_first_league_change_restores_fallback(tmp_path):
     assert [r["revertable"] for r in h.tuning_log()] == [True]
     h.revert(rid, "2026-11-06T07:00:00+00:00")
     assert ("alpha", "England 2") not in h.tuned()
+
+
+def test_sharp_before_takes_the_last_fetch_before_a_time(tmp_path):
+    from ninety_five.history import HistoryStore
+    h = HistoryStore(tmp_path / "h.sqlite")
+    h.save_sharp("fd:1", "2026-11-08T08:00:00+00:00", {"1": {"odds": 2.0, "book": "pinnacle"}})
+    h.save_sharp("fd:1", "2026-11-08T12:00:00+00:00", {"1": {"odds": 1.9, "book": "pinnacle"}})
+    h.save_sharp("fd:1", "2026-11-08T15:00:00+00:00", {"1": {"odds": 1.7, "book": "pinnacle"}})  # after kick-off
+    assert h.sharp_before("fd:1", "2026-11-08T14:00:00+00:00") == {"1": 1.9}
+    assert h.sharp_before("fd:1", "2026-11-08T07:00:00+00:00") == {}
+    assert h.sharp_before(None, "2026-11-08T14:00:00+00:00") == {}

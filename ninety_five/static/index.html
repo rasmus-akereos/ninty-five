@@ -325,13 +325,23 @@ const placedBadge = f => {
 };
 const betLine = b => `${b.market} · ${num(b.stake, 0)} kr @ ${num(b.odds)}`;
 // The open bets on the folded-open match, with what each pays if it wins.
-function myBetsBox(mine) {
+// "vs Pinnacle now": how much better the bet's odds are than Pinnacle's fair
+// price (odds × fair probability − 1). Positive = you got a better price than
+// the sharp market now thinks the outcome is worth.
+function myBetsBox(mine, sharp) {
   if (!mine.length) return "";
+  const vs = b => {
+    const p = sharp && sharp.probabilities[b.market];
+    if (!p) return `<td class="muted">–</td>`;
+    const v = b.odds * p - 1;
+    return `<td class="${v >= 0 ? "pos" : "neg"}" title="Pinnacle's fair odds ${num(1 / p)}">${v >= 0 ? "+" : ""}${pct(v)}</td>`;
+  };
+  const age = sharp ? ` · Pinnacle as of ${hhmm(sharp.fetched_at)}` : "";
   const staked = mine.reduce((t, b) => t + b.stake, 0);
   const when = b => b.created ? new Date(b.created).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }) : "";
-  return `<div class="mybets"><b>Your bets on this match</b> <span class="muted">· ${num(staked, 0)} kr staked</span>
-    <div class="scroll"><table><tr><th>Selection</th><th>Odds</th><th>Stake</th><th>Pays if it wins</th><th>Logged</th></tr>
-    ${mine.map(b => `<tr><td>${esc(b.market)}</td><td>${num(b.odds)}</td><td>${num(b.stake, 0)} kr</td><td>${num(b.stake * b.odds, 0)} kr</td><td class="muted">${esc(when(b))}</td></tr>`).join("")}
+  return `<div class="mybets"><b>Your bets on this match</b> <span class="muted">· ${num(staked, 0)} kr staked${age}</span>
+    <div class="scroll"><table><tr><th>Selection</th><th>Odds</th><th>Stake</th><th>Pays if it wins</th><th title="Your odds compared with Pinnacle's fair price now. Positive means you got a better price than the market now thinks it's worth.">vs Pinnacle now</th><th>Logged</th></tr>
+    ${mine.map(b => `<tr><td>${esc(b.market)}</td><td>${num(b.odds)}</td><td>${num(b.stake, 0)} kr</td><td>${num(b.stake * b.odds, 0)} kr</td>${vs(b)}<td class="muted">${esc(when(b))}</td></tr>`).join("")}
     </table></div></div>`;
 }
 let evalSeq = 0;
@@ -696,7 +706,7 @@ function renderResult(r) {
     <p><b>${esc(r.home)}</b> ${num(r.xg[0])} – ${num(r.xg[1])} <b>${esc(r.away)}</b> <span class="muted">expected goals ·
       1 ${pct(r.probabilities["1"])} · X ${pct(r.probabilities["X"])} · 2 ${pct(r.probabilities["2"])} ·
       likely ${r.top_scores.slice(0, 3).map(s => s.score).join(", ")}</span></p>
-    ${myBetsBox(mine)}
+    ${myBetsBox(mine, r.sharp)}
     ${notes.map(n => `<div class="note">${esc(n)}</div>`).join("")}
     ${sel}`;
   $("f-result").querySelectorAll("[data-log]").forEach(b => b.onclick = () => logBet(r.selections[+b.dataset.log], b));
@@ -1020,6 +1030,8 @@ function renderBetting(s) {
     ["Bets per day", t.bets_per_day == null ? "–" : num(t.bets_per_day, 1)],
     ["Stake per day", t.stake_per_day == null ? "–" : kr(t.stake_per_day)],
     ["Avg CLV", t.avg_clv == null ? "–" : `${pct(t.avg_clv)} <small class="muted">(n=${t.n_clv})</small>`],
+    ["Beat Pinnacle at kick-off", t.avg_vs_pinnacle == null ? "–"
+      : `<span class="${t.avg_vs_pinnacle >= 0 ? "pos" : "neg"}">${t.avg_vs_pinnacle >= 0 ? "+" : ""}${pct(t.avg_vs_pinnacle)}</span> <small class="muted">(n=${t.n_vs_pinnacle})</small>`],
   ].map(([k, v]) => `<div class="kpi"><span>${k}</span><b>${v}</b></div>`).join("");
   const few = t.n_settled < 10 ? `<p class="muted">Only ${t.n_settled} settled bets so far: these numbers are mostly luck until there are a few dozen. Expected profit is what the edge alone should have made.</p>` : "";
   $("sub-betting").innerHTML = `<div class="kpis">${tiles}</div>${few}
