@@ -37,6 +37,11 @@ a { color: var(--accent); }
 .icon-btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
 .icon-btn:hover { border-color: var(--accent); }
 .icon-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.icon-btn .spin { display: inline-block; }
+.icon-btn.busy { opacity: .75; cursor: progress; }
+.icon-btn.busy .spin { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .icon-btn.busy .spin { animation-duration: 2.5s; } }
 .tabs { display: flex; gap: 4px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; margin-right: auto; }
 .tab { background: transparent; color: var(--muted); border: none; border-radius: 999px; padding: 6px 14px; font-weight: 600; font-size: 13px; }
 .tab.active { background: var(--accent); color: var(--accent-ink); }
@@ -205,7 +210,7 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
       <button class="tab" role="tab" data-tab="bets">Bet log <span class="n" id="bets-count"></span></button>
       <button class="tab" role="tab" data-tab="stats">Statistics</button>
     </nav>
-    <button class="icon-btn primary" id="loadboard" title="Fetch the latest fixtures and results">↻ Refresh</button>
+    <button class="icon-btn primary" id="loadboard" title="Fetch the latest fixtures and results"><span class="spin" aria-hidden="true">↻</span> <span class="label">Refresh</span></button>
     <button class="icon-btn" id="settings-btn" title="Settings">⚙<span class="lbl"> Settings</span></button>
     <button class="icon-btn" id="theme-btn" title="Light / dark">◐</button>
   </div>
@@ -331,6 +336,15 @@ const hhmm = iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minu
 let fetchedDays = 0;     // day window of the last refresh
 let refreshing = false;
 
+// The Refresh button doubles as the busy indicator: spinning ↻ while fetching.
+function setBusy(on) {
+  const b = $("loadboard");
+  b.classList.toggle("busy", on);
+  b.disabled = on;
+  b.setAttribute("aria-busy", on ? "true" : "false");
+  b.querySelector(".label").textContent = on ? "Refreshing…" : "Refresh";
+}
+
 function setBoard(r, extra = "") {
   board = r.fixtures;
   if (open && open.fixture) {  // keep the open match (and typed odds) if it's still listed
@@ -364,28 +378,32 @@ async function showStored() {
 async function refreshBoard() {
   if (refreshing) return;
   refreshing = true;
-  const first = !board.length;
-  $("board-info").textContent = first
-    ? "Fetching fixtures and fitting the model (the very first run downloads ~3 seasons and can take a few minutes)…"
-    : $("board-info").textContent.replace(/ · prices.*/, "") + " · refreshing…";
+  setBusy(true);
+  let waiting = false;
+  if (!board.length)
+    $("board-info").textContent = "Fetching fixtures and fitting the model (the very first run downloads ~3 seasons and can take a few minutes)…";
   try {
     const r = await api(`/api/fixtures/refresh?${boardQuery()}`, { method: "POST" });
     fetchedDays = Math.max(fetchedDays, +$("days").value);
     const settled = r.auto_settled.length ? ` · auto-settled ${r.auto_settled.length} bet(s)` : "";
-    const warn = (r.warnings || []).length ? ` ⚠ ${r.warnings.join(" · ")}` : "";
+    const shown = (r.warnings || []).filter(w => w !== "Refresh already running");  // the spinner says it
+    const warn = shown.length ? ` ⚠ ${shown.join(" · ")}` : "";
     setBoard(r, settled + warn);
     if (settled) loadBets();
     loadTrack();
-    if ((r.warnings || []).includes("Refresh already running")) waitForRunningRefresh(r.fetched_at);
+    if ((r.warnings || []).includes("Refresh already running")) {
+      waiting = true;
+      waitForRunningRefresh(r.fetched_at).finally(() => { refreshing = false; setBusy(false); });
+    }
   } catch (e) { $("board-info").textContent = e.message; }
-  finally { refreshing = false; }
+  finally { if (!waiting) { refreshing = false; setBusy(false); } }
 }
 
 // Another fetch (e.g. the daily one at start-up) is running: show its board
-// as soon as it is stored. Checks the stored board every 15 s for 10 minutes.
+// as soon as it is stored. Checks the stored board every 5 s for 10 minutes.
 async function waitForRunningRefresh(before) {
-  for (let i = 0; i < 40; i++) {
-    await new Promise(res => setTimeout(res, 15000));
+  for (let i = 0; i < 120; i++) {
+    await new Promise(res => setTimeout(res, 5000));
     let r;
     try { r = await api(`/api/fixtures?${boardQuery()}`); } catch { continue; }
     if (r.fetched_at !== before) { setBoard(r); loadBets(); loadTrack(); return; }
