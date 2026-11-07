@@ -139,6 +139,9 @@ class BetStore:
             b["take_profit_above"] = take_profit_above(b) if b["status"] == "open" else None
         return bets
 
+    def get(self, bet_id: int) -> dict | None:
+        return next((b for b in self.list() if b["id"] == bet_id), None)
+
     def delete(self, bet_id: int) -> None:
         with self._conn() as c:
             c.execute("DELETE FROM bets WHERE id = ?", (bet_id,))

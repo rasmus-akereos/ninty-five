@@ -325,3 +325,34 @@ def test_stats_betting_compares_bets_with_pinnacle_at_kickoff(client):
                        "match_key": "fd:1", "kickoff": kickoff})
     t = client.get("/api/stats/betting").json()["tiles"]
     assert t["n_vs_pinnacle"] == 1 and t["avg_vs_pinnacle"] == pytest.approx(0.1)
+
+
+def test_bet_detail_shows_the_prices_around_the_bet(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    kickoff = app_mod.history.match("fd:1")["kickoff"]
+    k = pd.Timestamp(kickoff)
+    app_mod.history.save_sharp("fd:1", (k - pd.Timedelta(hours=30)).isoformat(timespec="seconds"),
+                               {"1": {"odds": 2.0, "book": "pinnacle"}, "X": {"odds": 4.0, "book": "pinnacle"},
+                                "2": {"odds": 4.0, "book": "pinnacle"}})
+    app_mod.history.save_sharp("fd:1", (k - pd.Timedelta(hours=1)).isoformat(timespec="seconds"),
+                               {"1": {"odds": 2.5, "book": "pinnacle"}, "X": {"odds": 2.5, "book": "pinnacle"},
+                                "2": {"odds": 5.0, "book": "pinnacle"}})
+    # Typed Danske Spil prices: one before the bet, one long after it.
+    app_mod.history.record_odds("fd:1", "EUROPE", "A", "B", [{"market": "1", "odds": 2.2}, {"market": "X", "odds": 3.5}],
+                                "2026-11-03T09:00:00.000+00:00")
+    bet_id = app_mod.store.add({"dataset": "EUROPE", "home": "A", "away": "B", "market": "1", "odds": 2.2, "stake": 10,
+                                "match_key": "fd:1", "kickoff": kickoff, "p_model": 0.5, "p_blend": 0.5, "ev": 0.1})
+    app_mod.history.record_odds("fd:1", "EUROPE", "A", "B", [{"market": "1", "odds": 1.9}],
+                                (pd.Timestamp.now(tz="UTC") + pd.Timedelta(hours=1)).isoformat())
+    d = client.get(f"/api/bets/{bet_id}/detail").json()
+    assert d["bet"]["id"] == bet_id
+    assert d["danske_spil"] == {"1": 2.2, "X": 3.5}           # as typed when the bet was logged
+    assert d["model"]["1"] == 0.5                               # board snapshot
+    assert d["pinnacle_kickoff"]["odds"]["1"] == 2.5            # last price before kick-off
+    assert d["pinnacle_kickoff"]["vs"] == pytest.approx(2.2 * 0.4 - 1)
+    assert d["pinnacle_logged"]["odds"]["1"] == 2.0             # the price when the bet was logged
+    assert d["pinnacle_logged"]["vs"] == pytest.approx(0.1)
+
+
+def test_bet_detail_unknown_bet_is_404(client):
+    assert client.get("/api/bets/999/detail").status_code == 404

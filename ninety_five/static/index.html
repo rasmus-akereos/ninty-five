@@ -156,6 +156,11 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
 .pill { min-width: 54px; text-align: center; background: var(--raised); border-radius: 10px; padding: 4px 8px; font-variant-numeric: tabular-nums; font-weight: 600; }
 .pill small { display: block; font-size: 10px; color: var(--muted); font-weight: 500; }
 .badge.placed { background: var(--good-bg); color: var(--good); }
+#bets tr.betrow { cursor: pointer; }
+#bets tr.betrow:hover td, #bets tr.betrow.open td { background: var(--panel-2); }
+#bets tr.betdetail > td { background: var(--panel-2); padding: 8px 12px 12px; }
+.betinfo .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 16px; font-size: 13px; margin-bottom: 8px; }
+.betinfo .oddsgrid tr.mine td { font-weight: 700; color: var(--accent); }
 .mybets { background: var(--good-bg); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); border-radius: 10px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
 .mybets table { margin: 4px 0 0; }
 .mybets td, .mybets th { padding: 2px 10px 2px 0; border: 0; background: none; }
@@ -928,14 +933,64 @@ async function loadBets() {
     </details>
     <h3 class="sub">All bets</h3>` : "";
   $("bets").innerHTML = bets.length ? `<tr><th>Kick-off</th><th>Match</th><th>Selection</th><th>Odds</th><th>Stake</th><th>EV</th><th>Take Profit above</th><th>Close</th><th>Result</th><th>P/L</th><th></th></tr>` +
-    bets.map(b => `<tr><td>${kickoffLabel(b.kickoff)}</td><td>${esc(b.home)} – ${esc(b.away)}</td><td>${esc(b.market)}</td><td>${num(b.odds)}</td>
+    bets.map(b => `<tr class="betrow${expanded.has(b.id) ? " open" : ""}" data-bet="${b.id}" title="Click for the odds behind this bet"><td>${kickoffLabel(b.kickoff)}</td><td>${esc(b.home)} – ${esc(b.away)}</td><td>${esc(b.market)}</td><td>${num(b.odds)}</td>
       <td>${num(b.stake, 0)}</td><td>${pct(b.ev)}</td><td>${b.take_profit_above == null ? "–" : num(b.take_profit_above, 0) + " kr"}</td><td>${num(b.closing_odds)}</td>
       <td>${b.status}${b.home_goals != null ? ` (${b.home_goals}-${b.away_goals})` : ""}</td>
       <td class="${(b.pnl || 0) >= 0 ? "pos" : "neg"}">${num(b.pnl, 0)}</td>
       <td><button class="small secondary" onclick="settle(${b.id})">Settle</button>
           ${b.status === "open" ? `<button class="small secondary" onclick="tookProfit(${b.id})" title="Closed early with Danske Spil's Take Profit">Took profit</button>` : ""}
-          <button class="small secondary" onclick="del(${b.id})">✕</button></td></tr>`).join("")
+          <button class="small secondary" onclick="del(${b.id})">✕</button></td></tr>
+      <tr class="betdetail" data-detail="${b.id}"${expanded.has(b.id) ? "" : " hidden"}><td colspan="11"></td></tr>`).join("")
     : `<tr><td class="muted">No bets logged yet.</td></tr>`;
+  $("bets").querySelectorAll("tr.betrow").forEach(tr => tr.onclick = e => {
+    if (e.target.closest("button")) return;  // Settle / Took profit / delete keep their own job
+    toggleBet(+tr.dataset.bet);
+  });
+  expanded.forEach(id => loadBetDetail(id));
+}
+
+// ------------------------------------------------------- bet detail rows
+const expanded = new Set();  // bet ids folded open in the bet log
+function toggleBet(id) {
+  const row = document.querySelector(`#bets tr[data-detail="${id}"]`);
+  if (!row) return;
+  if (expanded.has(id)) { expanded.delete(id); row.hidden = true; }
+  else { expanded.add(id); row.hidden = false; loadBetDetail(id); }
+  document.querySelector(`#bets tr[data-bet="${id}"]`).classList.toggle("open", expanded.has(id));
+}
+
+const signedPct = v => v == null ? "–" : `<span class="${v >= 0 ? "pos" : "neg"}">${v >= 0 ? "+" : ""}${pct(v)}</span>`;
+const dayTime = iso => iso ? new Date(iso).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }) : "–";
+const MARKET_ORDER = ["1", "X", "2", "1X", "12", "X2", "Over 1.5", "Under 1.5", "Over 2.5", "Under 2.5", "Over 3.5", "Under 3.5", "BTTS Yes", "BTTS No"];
+
+async function loadBetDetail(id) {
+  const cell = document.querySelector(`#bets tr[data-detail="${id}"] td`);
+  if (!cell) return;
+  if (!cell.innerHTML) cell.innerHTML = `<span class="muted">Loading…</span>`;
+  let d;
+  try { d = await api(`/api/bets/${id}/detail`); }
+  catch (e) { cell.innerHTML = `<div class="note">${esc(e.message)}</div>`; return; }
+  const b = d.bet, pl = d.pinnacle_logged, pk = d.pinnacle_kickoff;
+  const fair = p => p ? num(1 / p) : "–";
+  const markets = MARKET_ORDER.filter(m => m === b.market || d.danske_spil[m] != null
+    || (pl && pl.odds[m] != null) || (pk && pk.odds[m] != null));
+  const rows = markets.map(m => `<tr class="${m === b.market ? "mine" : ""}"><td>${esc(m)}${m === b.market ? " ← your bet" : ""}</td>
+      <td>${d.danske_spil[m] != null ? num(d.danske_spil[m]) : "–"}</td><td>${fair(d.model[m])}</td>
+      <td>${pl ? fair(pl.probabilities[m]) : "–"}</td><td>${pk ? fair(pk.probabilities[m]) : "–"}</td></tr>`).join("");
+  const facts = [
+    ["Bet", `${esc(b.market)} @ ${num(b.odds)} · ${num(b.stake, 0)} kr · pays ${num(b.stake * b.odds, 0)} kr`],
+    ["Logged", dayTime(b.created)], ["Kick-off", dayTime(d.kickoff)],
+    ["App's chance when logged", b.p_blend == null ? "–" : `${pct(b.p_blend)} (fair odds ${fair(b.p_blend)}, model ${pct(b.p_model)})`],
+    ["Expected value when logged", signedPct(b.ev)],
+    ["vs Pinnacle when logged", pl ? `${signedPct(pl.vs)} <small class="muted">(price from ${dayTime(pl.fetched_at)})</small>` : "– no Pinnacle price yet"],
+    ["vs Pinnacle at kick-off", pk ? `${signedPct(pk.vs)} <small class="muted">(price from ${dayTime(pk.fetched_at)})</small>` : "–"],
+    ["Closing odds (typed)", b.closing_odds ? `${num(b.closing_odds)} · CLV ${signedPct(b.odds / b.closing_odds - 1)}` : "–"],
+    ["Result", `${esc(b.status)}${b.home_goals != null ? ` (${b.home_goals}-${b.away_goals})` : ""}${b.pnl != null ? ` · ${signed(b.pnl)}` : ""}`],
+  ];
+  cell.innerHTML = `<div class="betinfo">
+    <div class="facts">${facts.map(([k, v]) => `<div><span class="muted">${k}</span> ${v}</div>`).join("")}</div>
+    ${rows ? `<div class="scroll"><table class="oddsgrid"><tr><th>Market</th><th>Danske Spil</th><th>Model fair</th><th>Pinnacle fair, logged</th><th>Pinnacle fair, kick-off</th></tr>${rows}</table></div>` : ""}
+    <p class="muted">Fair odds have the margin removed. Your price beats a fair price when it's higher.</p></div>`;
 }
 
 // ------------------------------------------------------------- statistics

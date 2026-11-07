@@ -206,6 +206,11 @@ def stats_betting() -> dict:
     return stats.betting(bets, history.competitions(), _sharp_at_kickoff(bets))
 
 
+def _utc(t) -> pd.Timestamp:
+    t = pd.Timestamp(t)
+    return t.tz_convert("UTC") if t.tzinfo else t.tz_localize("UTC")
+
+
 def _sharp_at_kickoff(bets: list[dict]) -> dict[int, float]:
     """bet id -> Pinnacle's fair probability for its market, from the last
     fetch before kick-off (the latest so far for matches not yet started)."""
@@ -216,9 +221,7 @@ def _sharp_at_kickoff(bets: list[dict]) -> dict[int, float]:
         kickoff = b.get("kickoff") or (history.match(b["match_key"]) or {}).get("kickoff")
         if not kickoff:
             continue
-        k = pd.Timestamp(kickoff)
-        k = k.tz_convert("UTC") if k.tzinfo else k.tz_localize("UTC")  # fetched_at is ISO UTC
-        prices = history.sharp_before(b["match_key"], k.isoformat(timespec="seconds"))
+        prices = history.sharp_before(b["match_key"], _utc(kickoff).isoformat(timespec="seconds"))  # fetched_at is ISO UTC
         p = market_probabilities(prices).get(b["market"])
         if p is not None:
             out[b["id"]] = p
@@ -359,6 +362,37 @@ def add_bet(bet: BetIn) -> dict:
         return {"id": store.add(bet.model_dump())}
     except DuplicateBet as exc:
         raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/bets/{bet_id}/detail")
+def bet_detail(bet_id: int) -> dict:
+    """What the bet looked like: the Danske Spil prices typed when it was
+    logged, the model's probabilities, and Pinnacle's price when it was logged
+    and at kick-off, each with how much better the bet's odds were ("vs")."""
+    bet = store.get(bet_id)
+    if bet is None:
+        raise HTTPException(404, "No such bet")
+    logged = _utc(bet["created"]) + pd.Timedelta(minutes=1)  # odds are stored just before the bet
+    key = bet.get("match_key")
+    kickoff = bet.get("kickoff") or ((history.match(key) or {}).get("kickoff") if key else None)
+
+    def pinnacle(before: pd.Timestamp) -> dict | None:
+        got = history.sharp_fetch_before(key, before.isoformat(timespec="seconds"))
+        if not got:
+            return None
+        probs = market_probabilities(got["odds"])
+        p = probs.get(bet["market"])
+        return {**got, "probabilities": probs, "vs": None if p is None else bet["odds"] * p - 1}
+
+    at_kickoff = pinnacle(_utc(kickoff)) if kickoff else None
+    return {
+        "bet": bet,
+        "kickoff": kickoff,
+        "danske_spil": history.odds_at(key, bet["dataset"], bet["home"], bet["away"], logged),
+        "model": history.model_before(key, logged),
+        "pinnacle_logged": pinnacle(logged),
+        "pinnacle_kickoff": at_kickoff,
+    }
 
 
 @app.post("/api/bets/{bet_id}/settle")

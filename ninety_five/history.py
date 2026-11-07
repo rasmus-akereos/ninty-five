@@ -310,6 +310,30 @@ class HistoryStore:
             ).fetchall()
         return {r["market"]: {"odds": r["odds"], "entered_at": r["entered_at"]} for r in rows}
 
+    def odds_at(self, match_key: str | None, dataset: str, home: str, away: str, at: pd.Timestamp) -> dict[str, float]:
+        """{market: odds}: the last Danske Spil price typed for each market at or before `at`."""
+        where, args = self._identity(match_key, dataset, home, away)
+        with self._conn() as c:
+            rows = c.execute(f"SELECT market, odds, entered_at FROM odds_entries WHERE {where} ORDER BY id", args).fetchall()
+        out: dict[str, float] = {}
+        for r in rows:
+            if pd.Timestamp(r["entered_at"]) <= at:
+                out[r["market"]] = r["odds"]
+        return out
+
+    def model_before(self, match_key: str | None, at: pd.Timestamp) -> dict[str, float]:
+        """The board's model probabilities from the last snapshot at or before
+        `at` (else the first one), {} for matches without snapshots."""
+        if not match_key:
+            return {}
+        with self._conn() as c:
+            rows = c.execute("SELECT taken_at, probabilities FROM snapshots WHERE match_key = ? ORDER BY id",
+                             (match_key,)).fetchall()
+        if not rows:
+            return {}
+        before = [r for r in rows if pd.Timestamp(r["taken_at"]) <= at]
+        return json.loads((before[-1] if before else rows[0])["probabilities"])
+
     def record_odds(
         self, match_key: str | None, dataset: str, home: str, away: str, selections: list[dict], entered_at: str
     ) -> int:
@@ -386,18 +410,24 @@ class HistoryStore:
                              (match_key, last)).fetchall()
         return {"fetched_at": last, "prices": {r["market"]: {"odds": r["odds"], "book": r["book"]} for r in rows}}
 
-    def sharp_before(self, match_key: str | None, before: str) -> dict[str, float]:
-        """{market: odds} of the last sharp fetch before `before` (ISO UTC)."""
+    def sharp_fetch_before(self, match_key: str | None, before: str) -> dict | None:
+        """{"fetched_at", "odds": {market: odds}} of the last sharp fetch
+        before `before` (ISO UTC), or None."""
         if not match_key:
-            return {}
+            return None
         with self._conn() as c:
             last = c.execute("SELECT MAX(fetched_at) AS t FROM sharp_prices WHERE match_key = ? AND fetched_at < ?",
                              (match_key, before)).fetchone()["t"]
             if last is None:
-                return {}
+                return None
             rows = c.execute("SELECT market, odds FROM sharp_prices WHERE match_key = ? AND fetched_at = ?",
                              (match_key, last)).fetchall()
-        return {r["market"]: r["odds"] for r in rows}
+        return {"fetched_at": last, "odds": {r["market"]: r["odds"] for r in rows}}
+
+    def sharp_before(self, match_key: str | None, before: str) -> dict[str, float]:
+        """{market: odds} of the last sharp fetch before `before` (ISO UTC)."""
+        got = self.sharp_fetch_before(match_key, before)
+        return got["odds"] if got else {}
 
     def log_odds_api(self, at: str, sport: str, cost: int, remaining: int | None) -> None:
         with self._conn() as c:
