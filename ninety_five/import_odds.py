@@ -42,12 +42,40 @@ DANISH_COUNTRIES = {
     "elfenbenskysten": "ivory coast", "cameroun": "cameroon", "algeriet": "algeria", "tunesien": "tunisia",
     "sydafrika": "south africa", "saudi arabien": "saudi arabia", "iran": "iran", "irak": "iraq", "qatar": "qatar", "indien": "india",
     "new zealand": "new zealand", "jamaica": "jamaica", "haiti": "haiti",
+    "bosnien og hercegovina": "bosnia and herzegovina", "forenede arabiske emirater": "united arab emirates",
+    "kap verde": "cape verde", "aekvatorialguinea": "equatorial guinea",
+    "centralafrikanske republik": "central african republic", "den centralafrikanske republik": "central african republic",
+    "etiopien": "ethiopia", "libyen": "libya", "mauretanien": "mauritania", "sydsudan": "south sudan",
+    "comorerne": "comoros", "kirgisistan": "kyrgyzstan", "syrien": "syria", "kinesisk taipei": "taiwan",
+    "trinidad og tobago": "trinidad and tobago", "antigua og barbuda": "antigua and barbuda",
+    "saint kitts og nevis": "saint kitts and nevis", "saint vincent og grenadinerne": "saint vincent and the grenadines",
+    "fransk guyana": "french guiana", "caymanoeerne": "cayman islands", "kamerun": "cameroon",
+    "dominikanske republik": "dominican republic", "den dominikanske republik": "dominican republic",
+    "moldavien": "moldova", "swaziland": "eswatini", "usbekistan": "uzbekistan", "indonesien": "indonesia",
+    "madagaskar": "madagascar", "palaestina": "palestine", "surinam": "suriname", "libanon": "lebanon",
+}
+# Whole club names (folded) that word-by-word matching can't reach.
+CLUB_NAMES = {
+    "sporting clube de portugal": "sporting lisbon",  # word-mapping "portugal" would break the country
+    "hapoel be er": "hapoel beer sheva",
+    "union sg": "union st gilloise", "royale union sg": "union st gilloise",
+    "hapoel be er sheva": "hapoel beer sheva", "nott m forest": "nottingham forest",
+    # short names that also fit a neighbour ("Bayern" ~ "Bayer", "Paris SG" ⊃ "Paris FC")
+    "bayern": "bayern munchen", "paris sg": "paris saint germain", "inter milan": "internazionale milano",
+    "celta vigo b": "celta b",
 }
 # Danish club names on Danske Spil -> the model's (football-data.co.uk) names
 # (word by word; also used for the Europa and Conference League names)
 DANISH_CLUBS = {"koebenhavn": "copenhagen", "agf": "aarhus", "crvena": "red", "zvezda": "star", "roede": "red", "stjerne": "star", "ob": "odense",
-                "basaksehir": "buyuksehyr", "saint": "st", "cp": "lisbon"}  # Sporting CP = Sp Lisbon
-STOPWORDS = {"fc", "afc", "cf", "sk", "kv", "sc", "ac", "as", "fk", "club", "de", "the", "cd", "sv", "vfb", "vfl", "ss"}
+                "basaksehir": "buyuksehyr", "saint": "st", "cp": "lisbon",  # Sporting CP = Sp Lisbon
+                "lissabon": "lisbon", "sint": "st", "prag": "praha", "prague": "praha", "kreta": "crete",
+                # nicknames and abbreviations
+                "fck": "copenhagen", "fcm": "midtjylland", "aab": "aalborg", "spurs": "tottenham",
+                "wolves": "wolverhampton", "bvb": "dortmund", "gladbach": "monchengladbach", "hsv": "hamburger",
+                "utd": "united", "sheff": "sheffield", "nottm": "nottingham", "weds": "wednesday", "wed": "wednesday",
+                "rvs": "rovers", "rennais": "rennes"}
+STOPWORDS = {"fc", "afc", "cf", "sk", "kv", "sc", "ac", "as", "fk", "club", "de", "the", "cd", "sv", "vfb", "vfl", "ss",
+             "rc", "rcd", "pae"}
 
 
 def _fold(s: str) -> str:
@@ -59,7 +87,7 @@ def _fold(s: str) -> str:
 
 def _tokens(name: str) -> list[str]:
     folded = _fold(name)
-    folded = DANISH_COUNTRIES.get(folded, folded)
+    folded = DANISH_COUNTRIES.get(folded) or CLUB_NAMES.get(folded, folded)
     words = [DANISH_CLUBS.get(t, t) for t in folded.split()]
     return [t for t in words if t not in STOPWORDS] or words
 
@@ -113,6 +141,10 @@ def _same(danskespil: str, board: str) -> bool:
     return same_team(danskespil, board) or same_team(board, danskespil)
 
 
+def _exact(danskespil: str, board: str) -> bool:
+    return _tokens(danskespil) == _tokens(board)
+
+
 def find_match(home: str, away: str, board: list[dict]) -> dict | None:
     """The board match for a Danske Spil match: both teams matching, or failing
     that, one team matching and the other sharing a word (Danske Spil uses some
@@ -123,6 +155,12 @@ def find_match(home: str, away: str, board: list[dict]) -> dict | None:
         both = [m for m in board
                 if (_same(home, m["home"]) and _shares_word(away, m["away"]))
                 or (_same(away, m["away"]) and _shares_word(home, m["home"]))]
+    # Several pairs fit ("Barcelona" is in "Espanyol de Barcelona", "Island"
+    # is a near spelling of Ireland): keep those whose names fit exactly.
+    if len({(m["home"], m["away"]) for m in both}) > 1:
+        score = lambda m: (_exact(home, m["home"]) + _exact(away, m["away"]))
+        best = max(map(score, both))
+        both = [m for m in both if score(m) == best]
     # The same two teams can meet twice in the window (e.g. two friendlies):
     # take the next one. Different pairs of teams are ambiguous.
     if len({(m["home"], m["away"]) for m in both}) != 1:

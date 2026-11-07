@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 
 from ninety_five import import_odds
@@ -104,3 +105,68 @@ def test_danish_name_for_red_star():
 
 def test_ob_is_odense():
     assert import_odds.same_team("OB", "Odense")
+
+
+# Danske Spil names (left) for board names (right) found missing in a sweep of
+# every board team.
+DS_NAMES = [
+    ("FCK", "FC Copenhagen"), ("FCM", "Midtjylland"), ("AaB", "Aalborg"),
+    ("Spurs", "Tottenham Hotspur FC"), ("Wolves", "Wolverhampton Wanderers FC"),
+    ("Man Utd", "Manchester United FC"), ("Sheffield Utd", "Sheffield United FC"), ("Sheff Utd", "Sheffield United FC"),
+    ("Nottm Forest", "Nottingham Forest FC"), ("Sheffield Wednesday", "Sheffield Weds"), ("Bristol Rovers", "Bristol Rvs"),
+    ("BVB", "Borussia Dortmund"), ("Gladbach", "Borussia Mönchengladbach"), ("HSV", "Hamburger SV"),
+    ("RC Lens", "Racing Club de Lens"), ("Rennes", "Stade Rennais FC 1901"),
+    ("Sporting Lissabon", "Sporting Clube de Portugal"), ("Sporting CP", "Sporting Clube de Portugal"),
+    ("Slavia Prag", "SK Slavia Praha"), ("Sparta Prag", "Sparta Prague"), ("Sparta Praha", "Sparta Prague"),
+    ("AEK Athen", "PAE AEK"), ("Sint-Truiden", "St Truiden"), ("Hapoel Beer Sheva", "Hapoel Be'er"),
+    ("OFI Kreta", "OFI Crete"), ("Union SG", "St. Gilloise"), ("Royale Union SG", "St. Gilloise"),
+    ("Bosnien og Hercegovina", "Bosnia and Herzegovina"), ("Forenede Arabiske Emirater", "United Arab Emirates"),
+    ("Kap Verde", "Cape Verde"), ("Ækvatorialguinea", "Equatorial Guinea"),
+    ("Den Centralafrikanske Republik", "Central African Republic"), ("Etiopien", "Ethiopia"), ("Libyen", "Libya"),
+    ("Mauretanien", "Mauritania"), ("Sydsudan", "South Sudan"), ("Comorerne", "Comoros"), ("Kirgisistan", "Kyrgyzstan"),
+    ("Syrien", "Syria"), ("Kinesisk Taipei", "Taiwan"), ("Trinidad og Tobago", "Trinidad and Tobago"),
+    ("Antigua og Barbuda", "Antigua and Barbuda"), ("Saint Kitts og Nevis", "Saint Kitts and Nevis"),
+    ("Saint Vincent og Grenadinerne", "Saint Vincent and the Grenadines"), ("Fransk Guyana", "French Guiana"),
+    ("Caymanøerne", "Cayman Islands"), ("Kamerun", "Cameroon"), ("Den Dominikanske Republik", "Dominican Republic"),
+    ("Moldavien", "Moldova"), ("Swaziland", "Eswatini"), ("Usbekistan", "Uzbekistan"), ("Indonesien", "Indonesia"),
+    ("Madagaskar", "Madagascar"), ("Palæstina", "Palestine"), ("Surinam", "Suriname"), ("Libanon", "Lebanon"),
+    ("Nott'm Forest", "Nottingham Forest FC"), ("Hapoel Be'er Sheva", "Hapoel Be'er"),
+]
+
+
+@pytest.mark.parametrize("ds,board", DS_NAMES)
+def test_danske_spil_name_matches_board(ds, board):
+    assert import_odds._same(ds, board)
+
+
+def test_sporting_lisbon_alias_leaves_portugal_alone():
+    assert not import_odds._same("Portugal", "Sporting Clube de Portugal")
+    assert import_odds._same("Portugal", "Portugal")
+
+
+@pytest.mark.parametrize("home,away,want", [
+    ("Barcelona", "Sevilla", ("FC Barcelona", "Sevilla FC")),
+    ("Milan", "Lazio", ("AC Milan", "SS Lazio")),
+    ("Island", "Skotland", ("Iceland", "Scotland")),
+    ("Østrig", "Wales", ("Austria", "Wales")),
+    ("Bayern", "Wales", ("FC Bayern München", "Wales")),
+    ("Paris SG", "Wales", ("Paris Saint-Germain FC", "Wales")),
+    ("Inter Milan", "Wales", ("FC Internazionale Milano", "Wales")),
+    ("Celta Vigo B", "Wales", ("Celta B", "Wales")),
+])
+def test_closest_names_win_when_two_matches_fit(home, away, want):
+    board = [{"home": "FC Barcelona", "away": "Sevilla FC"}, {"home": "RCD Espanyol de Barcelona", "away": "Sevilla FC"},
+             {"home": "AC Milan", "away": "SS Lazio"}, {"home": "FC Internazionale Milano", "away": "SS Lazio"},
+             {"home": "Iceland", "away": "Scotland"}, {"home": "Republic of Ireland", "away": "Scotland"},
+             {"home": "Austria", "away": "Wales"}, {"home": "Australia", "away": "Wales"},
+             {"home": "FC Bayern München", "away": "Wales"}, {"home": "Bayer 04 Leverkusen", "away": "Wales"},
+             {"home": "Paris Saint-Germain FC", "away": "Wales"}, {"home": "Paris FC", "away": "Wales"},
+             {"home": "FC Internazionale Milano", "away": "Wales"}, {"home": "AC Milan", "away": "Wales"},
+             {"home": "Celta B", "away": "Wales"}, {"home": "Ceuta", "away": "Wales"}]
+    m = import_odds.find_match(home, away, board)
+    assert m is not None and (m["home"], m["away"]) == want
+
+
+def test_still_ambiguous_without_a_closest_name():
+    board = [{"home": "Sporting Clube de Portugal", "away": "Rio Ave FC"}, {"home": "Sporting Clube de Braga", "away": "Rio Ave FC"}]
+    assert import_odds.find_match("Sporting", "Rio Ave", board) is None
