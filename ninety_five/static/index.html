@@ -98,6 +98,7 @@ th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--bor
 th:first-child, td:first-child { text-align: left; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
 tr.rec td { background: var(--good-bg); }
+tr.rec.caution td { background: color-mix(in srgb, var(--bad) 14%, transparent); }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px; }
 .kpi { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
 .kpi b { display: block; font-size: 18px; margin-top: 2px; }
@@ -183,6 +184,11 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
 @media (max-width: 720px) { .groups { grid-template-columns: 1fr; } }
 .cell input { padding: 6px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
 .cell input.hit { border-color: var(--good); background: var(--good-bg); color: var(--good); }
+.cell input.caution { border-color: var(--bad); color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bad) 35%, transparent), 0 0 12px color-mix(in srgb, var(--bad) 55%, transparent); }
+.gap { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; margin-left: 6px; white-space: nowrap; }
+.gap.amber { background: var(--warn-bg); color: var(--warn); }
+.gap.red { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
 .cell small { display: block; font-size: 10px; color: var(--faint); margin-top: 3px; line-height: 1.25; }
 .more { margin-top: 10px; }
 .more[open] .groups { margin-top: 8px; }
@@ -228,6 +234,8 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
       <div><label>Model weight (model vs Danske Spil)</label><div id="alpha-info" style="padding:6px 0">0.50, tuned automatically. See Statistics → Tuning.</div></div>
       <div><label>Kelly fraction</label><input id="kelly" type="number" step="0.05" value="0.25"></div>
       <div><label>Max stake (% bankroll)</label><input id="maxstake" type="number" step="0.5" value="3"></div>
+      <div><label>Max per match, all bets (% bankroll)</label><input id="matchlimit" type="number" step="0.5" value="5"></div>
+      <div><label>Big-gap warning (model − market, points)</label><input id="gapwarn" type="number" step="1" value="15"></div>
       <div><label>Min edge to bet (EV %)</label><input id="minedge" type="number" step="0.5" value="3"></div>
     </div>
     <p class="muted" id="import-help" style="margin-bottom:0">Danske Spil button: drag <a id="bookmarklet" class="bookmarklet" href="#">→ ninety-five</a> to your bookmarks bar. On a Danske Spil match page, click it to bring that match's odds here.</p>
@@ -327,6 +335,7 @@ function settings() {
   return {
     bankroll: +$("bankroll").value, kelly_fraction: +$("kelly").value,
     max_stake_pct: +$("maxstake").value / 100, min_edge: +$("minedge").value / 100,
+    match_limit_pct: +$("matchlimit").value / 100, gap_warn: +$("gapwarn").value / 100,
   };
 }
 const boardEdge = () => +$("boardedge").value / 100;
@@ -600,8 +609,12 @@ function markHits() {
   (open && open.result ? open.result.selections : []).forEach(s => sel[s.market] = s);
   document.querySelectorAll("#board [data-market]").forEach(el => {
     const m = el.dataset.market, v = parseOdds(el.value), min = minOdds(m), s = sel[m];
-    const hit = v == null ? false : s && Math.abs(s.odds - v) < 1e-9 ? s.recommended : min != null && v >= min;
-    el.classList.toggle("hit", hit);
+    const same = v != null && s && Math.abs(s.odds - v) < 1e-9;
+    const hit = v == null ? false : same ? s.recommended : min != null && v >= min;
+    const caution = same && s.recommended && !!s.caution;  // worth it on paper, but the market disagrees a lot
+    el.classList.toggle("hit", hit && !caution);
+    el.classList.toggle("caution", caution);
+    el.title = caution ? `Model ${pct(s.p_model)} vs market ${pct(s.p_market)}: big disagreement, stake cut` : "";
   });
 }
 
@@ -639,14 +652,20 @@ function renderResult(r) {
   if (r.selections.some(s => s.p_market == null)) notes.push("Rows without a market probability come from an incomplete market (enter every outcome to strip the margin). They use the model only and are less reliable.");
   const mine = openBetsFor({ key: open && open.fixture ? open.fixture.key : null, dataset: open ? open.dataset : null, home: r.home, away: r.away });
   if (mine.length) notes.push(`Your open bets on this match: ${mine.map(betLine).join(", ")}.`);
+  const ex = r.match_exposure;
+  if (ex && ex.staked > 0) notes.push(ex.staked >= ex.limit
+    ? `Match limit reached: ${num(ex.staked, 0)} of ${num(ex.limit, 0)} kr already on this match. Markets on one match win or lose together.`
+    : `${num(ex.staked, 0)} of ${num(ex.limit, 0)} kr match limit used. Suggested stakes fit in the ${num(ex.limit - ex.staked, 0)} kr left.`);
+  if (r.selections.some(s => s.recommended && s.caution))
+    notes.push(`Red boxes: the model rates these far above the market. The market usually knows something the model doesn't (injuries, line-ups, form), so their stakes are cut: half from ${+$("gapwarn").value} points apart, a quarter from ${+$("gapwarn").value + 10}.`);
   if (r.alpha) notes.push(`Blend uses model weight ${num(r.alpha.value)} (${alphaScope(r.alpha.scope)}), tuned automatically.`);
   const sel = r.selections.length ? `<div class="scroll"><table>
       <tr><th>Selection</th><th>Odds</th><th>Model</th><th>Market (no margin)</th><th>Blend</th><th>Fair odds</th><th>EV</th><th>Stake</th><th></th></tr>
-      ${r.selections.map((s, i) => `<tr class="${s.recommended ? "rec" : ""}">
-        <td>${esc(s.market)}</td><td>${num(s.odds)}</td><td>${pct(s.p_model)}</td><td>${pct(s.p_market)}</td>
+      ${r.selections.map((s, i) => `<tr class="${s.recommended ? "rec" : ""}${s.recommended && s.caution ? " caution" : ""}">
+        <td>${esc(s.market)}${s.recommended && s.caution ? `<span class="gap ${s.caution}" title="Model minus market">+${Math.round(s.gap * 100)} pts</span>` : ""}</td><td>${num(s.odds)}</td><td>${pct(s.p_model)}</td><td>${pct(s.p_market)}</td>
         <td>${pct(s.p_blend)}</td><td>${num(s.fair_odds)}</td>
         <td class="${s.ev >= 0 ? "pos" : "neg"}">${pct(s.ev)}</td>
-        <td>${s.recommended ? num(s.stake, 0) + " kr" : "–"}</td>
+        <td>${!s.recommended ? "–" : s.capped && s.stake === 0 ? `<span class="muted">limit</span>` : num(s.stake, 0) + " kr"}</td>
         <td>${logCell(s, i, mine)}</td></tr>`).join("")}
     </table></div><div id="f-lognote"></div>` : `<p class="muted">Type Danske Spil odds above. A box turns green when the price is worth betting. Enter every outcome of a market for an honest edge.</p>`;
   $("f-result").innerHTML = `
@@ -780,7 +799,8 @@ async function logBet(s, btn) {
     return;
   }
   if (open && open.stakes) delete open.stakes[s.market];
-  loadBets().catch(() => {});
+  await loadBets().catch(() => {});
+  if (open === target) evaluate();  // the match limit has less room now
 }
 
 async function settle(id) {
@@ -1084,7 +1104,7 @@ $("theme-btn").onclick = () => {
   store.set("theme", next); applyTheme(next);
 };
 // Settings and the board edge change the numbers in an open match.
-["bankroll", "kelly", "maxstake", "minedge", "boardedge"].forEach(id =>
+["bankroll", "kelly", "maxstake", "minedge", "boardedge", "matchlimit", "gapwarn"].forEach(id =>
   $(id).addEventListener("change", () => { if (open) evaluate(); }));
 $("boardedge").addEventListener("change", showStored);  // min odds are derived; no refetch
 $("days").addEventListener("change", () => +$("days").value > fetchedDays ? refreshBoard() : showStored());

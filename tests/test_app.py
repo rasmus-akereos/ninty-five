@@ -281,3 +281,19 @@ def test_track_record_lives_in_statistics(client):
     html = _page(client)
     assert html.index('id="tab-stats"') < html.index('id="track"')
     assert html.index('id="tab-bets"') < html.index('id="tab-stats"')
+
+
+def test_evaluate_counts_open_bets_on_the_match(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    app_mod.store.add({"dataset": "EUROPE", "home": "A", "away": "B", "market": "X", "odds": 3.2, "stake": 45,
+                       "match_key": "fd:1"})
+    voided = app_mod.store.add({"dataset": "EUROPE", "home": "A", "away": "B", "market": "2", "odds": 3.0,
+                                "stake": 30, "match_key": "fd:1"})
+    app_mod.store.settle(voided, void=True)
+    app_mod.store.add({"dataset": "EUROPE", "home": "C", "away": "D", "market": "1", "odds": 2.0, "stake": 30,
+                       "match_key": "fd:2"})
+    body = {"dataset": "EUROPE", "home": "A", "away": "B", "match_key": "fd:1", "odds": FULL_1X2,
+            "settings": {"bankroll": 1000, "match_limit_pct": 0.05}}
+    r = client.post("/api/evaluate", json=body).json()
+    assert r["match_exposure"] == {"staked": 45, "limit": 50}
+    assert all(s["stake"] <= 5 for s in r["selections"])

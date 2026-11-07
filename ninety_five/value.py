@@ -24,6 +24,16 @@ Method
    long-run log growth *if p is correct*. p is never correct, and overbetting
    is far more damaging than underbetting, so we stake kelly_fraction * f*
    (default 0.25) and cap each bet at max_stake_pct of bankroll.
+
+6. Distrust big disagreements. When the model rates an outcome gap_warn
+   (15 points) or more above the de-margined market, the market usually knows
+   something the model doesn't (injuries, line-ups, form), yet the "edge" and
+   so the stake grow with the gap. Such stakes are halved, and quartered from
+   gap_warn + 10 points.
+
+7. Cap the match. Markets on one match move together (Under 2.5, BTTS No and
+   the draw are one opinion), so all bets on a match together stay within
+   match_limit_pct of bankroll: each stake is cut to the room left.
 """
 
 from __future__ import annotations
@@ -48,6 +58,8 @@ class Settings:
     max_stake_pct: float = 0.03  # of bankroll
     min_edge: float = 0.03       # minimum EV to recommend
     bankroll: float = 1000.0
+    match_limit_pct: float = 0.05  # all bets on one match together
+    gap_warn: float = 0.15       # model minus market from which stakes shrink
 
 
 @dataclass
@@ -62,6 +74,9 @@ class Selection:
     kelly: float
     stake: float
     recommended: bool
+    gap: float | None = None     # model minus market probability
+    caution: str = ""            # "", "amber" (stake halved) or "red" (quartered)
+    capped: bool = False         # stake cut by the match limit
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -92,8 +107,21 @@ def market_probabilities(odds: dict[str, float]) -> dict[str, float]:
     return out
 
 
-def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings) -> list[Selection]:
+RED_STEP = 0.10  # red caution starts this far above gap_warn
+
+
+def caution_for(gap: float | None, s: Settings) -> tuple[str, float]:
+    """Caution level and stake multiplier for a model-minus-market gap."""
+    if gap is None or gap < s.gap_warn:
+        return "", 1.0
+    return ("red", 0.25) if gap >= s.gap_warn + RED_STEP else ("amber", 0.5)
+
+
+def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings,
+             already_staked: float = 0.0) -> list[Selection]:
+    """`already_staked`: kroner already bet on this match (open bets)."""
     market = market_probabilities(odds)
+    room = max(s.match_limit_pct * s.bankroll - already_staked, 0.0)
     rows = []
     for name, o in odds.items():
         if name not in model_probs or o <= 1:
@@ -105,11 +133,16 @@ def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings)
         p = pm if pk is None else s.alpha * pm + (1 - s.alpha) * pk
         ev = float(p * o - 1)
         kelly = max(ev / (o - 1), 0.0)
-        stake_pct = min(s.kelly_fraction * kelly, s.max_stake_pct)
+        gap = None if pk is None else pm - pk
+        caution, mult = caution_for(gap, s)
+        stake_pct = min(s.kelly_fraction * kelly * mult, s.max_stake_pct)
         rec = ev >= s.min_edge
         # Whole kroner: that's how stakes are placed. A recommended bet never
-        # rounds down to nothing.
+        # rounds down to nothing, unless the match limit is used up.
         stake = float(max(1, round(stake_pct * s.bankroll))) if rec and stake_pct > 0 else 0.0
+        capped = stake > room
+        if capped:
+            stake = float(int(room))
         rows.append(
             Selection(
                 market=name,
@@ -122,6 +155,9 @@ def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings)
                 kelly=kelly,
                 stake=stake,
                 recommended=bool(rec),
+                gap=gap,
+                caution=caution,
+                capped=bool(capped),
             )
         )
     return sorted(rows, key=lambda r: r.ev, reverse=True)

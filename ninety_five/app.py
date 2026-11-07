@@ -54,6 +54,8 @@ class SettingsIn(BaseModel):  # the model weight alpha is the server's (tuning.p
     max_stake_pct: float = Field(0.03, ge=0, le=1)
     min_edge: float = 0.03
     bankroll: float = Field(1000.0, gt=0)
+    match_limit_pct: float = Field(0.05, ge=0, le=1)
+    gap_warn: float = Field(0.15, ge=0, le=1)
 
 
 class EvaluateIn(BaseModel):
@@ -225,6 +227,20 @@ def ratings(dataset: str = "INTL", top: int = 50) -> list[dict]:
     return get_model(dataset).ratings().head(top).round(3).to_dict(orient="records")
 
 
+def _staked_on(req: EvaluateIn) -> float:
+    """Kroner in open bets on this match (by board key, else by team names)."""
+    try:
+        bets = store.list()
+    except Exception as exc:  # the bet log must never break pricing
+        log.warning("could not read bets: %s", exc)
+        return 0.0
+    def same(b):
+        if req.match_key and b.get("match_key"):
+            return b["match_key"] == req.match_key
+        return (b["dataset"], b["home"], b["away"]) == (req.dataset, req.home, req.away)
+    return float(sum(b["stake"] for b in bets if b["status"] == "open" and same(b)))
+
+
 @app.post("/api/evaluate")
 def evaluate_match(req: EvaluateIn) -> dict:
     # Stamp typed odds on arrival: requests can finish out of order while the
@@ -249,7 +265,9 @@ def evaluate_match(req: EvaluateIn) -> dict:
     except Exception as exc:
         log.warning("could not read tuned settings: %s", exc)
         alpha, alpha_scope = tuning.ALPHA_DEFAULT, "default"
-    selections = evaluate(probs, odds, Settings(alpha=alpha, **req.settings.model_dump()))
+    already = _staked_on(req)
+    st = Settings(alpha=alpha, **req.settings.model_dump())
+    selections = evaluate(probs, odds, st, already_staked=already)
     # Previous visit's prices are shown as hints, so read them before storing.
     last_odds: dict = {}
     try:
@@ -271,6 +289,7 @@ def evaluate_match(req: EvaluateIn) -> dict:
         "xg": [lh, la],
         "data_matches": [m.n_matches.get(req.home, 0), m.n_matches.get(req.away, 0)],
         "model_as_of": str(m.as_of.date()),
+        "match_exposure": {"staked": already, "limit": round(st.match_limit_pct * st.bankroll, 2)},
         "probabilities": probs,
         "fair_odds": {k: (1 / v if v > 0 else None) for k, v in probs.items()},
         "top_scores": [{"score": f"{i}-{j}", "p": p} for i, j, p in top_scores],

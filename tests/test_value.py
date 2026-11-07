@@ -54,3 +54,50 @@ def test_took_profit_counts_payout_minus_stake(tmp_path):
     # auto-settlement never overrides a closed bet
     assert st.auto_settle(pd.DataFrame([{"match_id": 7, "hg": 0, "ag": 0}])) == []
     assert st.list()[0]["status"] == "took profit"
+
+
+def _sel(probs, odds, already=0.0, **kw):
+    base = dict(alpha=0.5, bankroll=100000, kelly_fraction=0.25, max_stake_pct=1.0, min_edge=0.03, match_limit_pct=1.0)
+    return {r.market: r for r in evaluate(probs, odds, Settings(**{**base, **kw}), already_staked=already)}
+
+
+ODDS = {"1": 2.4, "X": 3.4, "2": 3.0}
+
+
+def test_big_gap_halves_stake():
+    probs = {"1": 0.60, "X": 0.22, "2": 0.18}
+    plain = _sel(probs, ODDS, gap_warn=0.5)["1"]
+    flagged = _sel(probs, ODDS)["1"]
+    assert 0.15 <= flagged.gap < 0.25
+    assert plain.caution == "" and flagged.caution == "amber"
+    assert flagged.stake == pytest.approx(plain.stake / 2, abs=1)
+
+
+def test_very_big_gap_quarters_stake():
+    probs = {"1": 0.70, "X": 0.17, "2": 0.13}
+    plain = _sel(probs, ODDS, gap_warn=0.5)["1"]
+    flagged = _sel(probs, ODDS)["1"]
+    assert flagged.gap >= 0.25 and flagged.caution == "red"
+    assert flagged.stake == pytest.approx(plain.stake / 4, abs=1)
+
+
+def test_small_gap_untouched():
+    probs = {"1": 0.48, "X": 0.27, "2": 0.25}
+    r = _sel(probs, ODDS)["1"]
+    assert r.gap < 0.15 and r.caution == "" and r.recommended
+
+
+def test_no_market_probability_no_gap():
+    r = _sel({"1": 0.60}, {"1": 2.4})["1"]
+    assert r.gap is None and r.caution == ""
+
+
+def test_match_limit_caps_stake_to_room_left():
+    probs = {"1": 0.48, "X": 0.27, "2": 0.25}
+    s = dict(bankroll=1000, max_stake_pct=0.03, match_limit_pct=0.05)
+    free = _sel(probs, ODDS, **s)["1"]
+    assert free.stake == 10 and not free.capped
+    some = _sel(probs, ODDS, already=45, **s)["1"]
+    assert some.stake == 5 and some.capped
+    full = _sel(probs, ODDS, already=50, **s)["1"]
+    assert full.stake == 0 and full.capped and full.recommended
