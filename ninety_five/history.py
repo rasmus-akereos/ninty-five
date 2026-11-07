@@ -429,6 +429,37 @@ class HistoryStore:
         got = self.sharp_fetch_before(match_key, before)
         return got["odds"] if got else {}
 
+    PAIR_AFTER = pd.Timedelta(hours=24)
+
+    def typed_vs_sharp(self) -> list[dict]:
+        """Every typed Danske Spil price on a board match with sharp prices,
+        paired with the last sharp fetch at or before it (else the first one
+        within PAIR_AFTER after it): {match_key, competition, market, odds,
+        entered_at, fetched_at, sharp: {market: odds}}."""
+        with self._conn() as c:
+            fetches: dict[str, dict[str, dict[str, float]]] = {}
+            for r in c.execute("SELECT match_key, fetched_at, market, odds FROM sharp_prices"):
+                fetches.setdefault(r["match_key"], {}).setdefault(r["fetched_at"], {})[r["market"]] = r["odds"]
+            entries = c.execute(
+                """SELECT o.match_key, o.market, o.odds, o.entered_at, COALESCE(m.competition, 'Other') AS competition
+                   FROM odds_entries o LEFT JOIN matches m ON m.key = o.match_key
+                   WHERE o.match_key IS NOT NULL ORDER BY o.id""").fetchall()
+        out = []
+        for e in entries:
+            by_time = fetches.get(e["match_key"])
+            if not by_time:
+                continue
+            t = pd.Timestamp(e["entered_at"])
+            times = sorted(by_time, key=pd.Timestamp)
+            before = [f for f in times if pd.Timestamp(f) <= t]
+            after = [f for f in times if t < pd.Timestamp(f) <= t + self.PAIR_AFTER]
+            pick = before[-1] if before else (after[0] if after else None)
+            if pick is None:
+                continue
+            out.append({"match_key": e["match_key"], "competition": e["competition"], "market": e["market"],
+                        "odds": e["odds"], "entered_at": e["entered_at"], "fetched_at": pick, "sharp": by_time[pick]})
+        return out
+
     def log_odds_api(self, at: str, sport: str, cost: int, remaining: int | None) -> None:
         with self._conn() as c:
             c.execute("INSERT INTO odds_api_calls (at, sport, cost, remaining) VALUES (?, ?, ?, ?)",

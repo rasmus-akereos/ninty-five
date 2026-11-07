@@ -396,3 +396,23 @@ def test_combo_rejects_unknown_or_too_few_legs(client):
     assert client.post("/api/combo", json=body).status_code == 400
     assert client.post("/api/combo", json={**body, "legs": ["X"]}).status_code == 422  # request validation
     assert client.post("/api/combo", json={**body, "legs": ["1", "2"]}).status_code == 400  # can't both win
+
+
+def test_stats_soft_compares_typed_prices_with_pinnacle(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    _pinnacle()
+    app_mod.history.record_odds("fd:1", "EUROPE", "A", "B", [{"market": "1", "odds": 2.1}, {"market": "BTTS No", "odds": 2.0}],
+                                "2026-11-03T10:00:00.000+00:00")
+    r = client.get("/api/stats/soft").json()
+    assert r["n"] == 2
+    assert {g["label"] for g in r["by_market"]} == {"1X2", "BTTS"}
+    assert r["by_league"][0]["label"] == "England 2"
+
+
+def test_stats_soft_counts_only_the_last_price_per_market(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    _pinnacle()
+    for t, o in (("10:00", 2.1), ("10:01", 4.0), ("10:02", 2.05)):  # a slip, corrected
+        app_mod.history.record_odds("fd:1", "EUROPE", "A", "B", [{"market": "1", "odds": o}], f"2026-11-03T{t}:00.000+00:00")
+    r = client.get("/api/stats/soft").json()
+    assert r["n"] == 1 and r["top"][0]["odds"] == 2.05

@@ -186,3 +186,39 @@ def model_insight(matches: list[dict]) -> dict:
                             "track": track._group_summary("1X2", ms)})
     league_rows.sort(key=lambda r: (-r["n"], r["competition"]))
     return {"teams": rows, "leagues": league_rows}
+
+
+# ------------------------------------------------- where Danske Spil is soft
+def _soft_group(label: str, rows: list[dict]) -> dict:
+    gaps = [r["gap"] for r in rows]
+    return {"label": label, "n": len(rows), "avg_gap": round(sum(gaps) / len(gaps), 4),
+            "above": round(sum(g > 0 for g in gaps) / len(gaps), 4), "best": round(max(gaps), 4),
+            "estimated": sum(r["basis"] == "implied" for r in rows), "thin": len(rows) < THIN_BETS}
+
+
+SOFT_OUTLIER = 0.35  # a typed price this far from fair is almost always a typo
+
+
+def soft_prices(rows: list[dict]) -> dict:
+    """How typed Danske Spil prices compare with Pinnacle's fair prices.
+    rows: {competition, market, gap (= odds * fair probability - 1), basis
+    ("sharp": Pinnacle's own price, "implied": from Pinnacle-implied goals)}.
+    Prices more than SOFT_OUTLIER from fair are left out (counted as
+    "excluded"). Groups are sorted softest (highest average gap) first."""
+    kept = [r for r in rows if abs(r["gap"]) <= SOFT_OUTLIER]
+    excluded, rows = len(rows) - len(kept), kept
+    def grouped(label):
+        by: dict[str, list[dict]] = {}
+        for r in rows:
+            by.setdefault(label(r), []).append(r)
+        return sorted((_soft_group(k, v) for k, v in by.items()), key=lambda g: -g["avg_gap"])
+    gaps = [r["gap"] for r in rows]
+    return {
+        "n": len(rows),
+        "avg_gap": round(sum(gaps) / len(gaps), 4) if rows else None,
+        "above": round(sum(g > 0 for g in gaps) / len(gaps), 4) if rows else None,
+        "by_league": grouped(lambda r: r["competition"]),
+        "by_market": grouped(lambda r: market_group(r["market"])),
+        "top": sorted(rows, key=lambda r: -r["gap"])[:10],
+        "excluded": excluded,
+    }

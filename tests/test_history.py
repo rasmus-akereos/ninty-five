@@ -244,3 +244,16 @@ def test_sharp_before_takes_the_last_fetch_before_a_time(tmp_path):
     assert h.sharp_before("fd:1", "2026-11-08T14:00:00+00:00") == {"1": 1.9}
     assert h.sharp_before("fd:1", "2026-11-08T07:00:00+00:00") == {}
     assert h.sharp_before(None, "2026-11-08T14:00:00+00:00") == {}
+
+
+def test_typed_vs_sharp_pairs_each_price_with_the_nearest_earlier_fetch(tmp_path):
+    from ninety_five.history import HistoryStore
+    h = HistoryStore(tmp_path / "h.sqlite")
+    h.save_sharp("fd:1", "2026-11-08T08:00:00+00:00", {"1": {"odds": 2.0, "book": "pinnacle"}})
+    h.save_sharp("fd:1", "2026-11-08T12:00:00+00:00", {"1": {"odds": 1.9, "book": "pinnacle"}})
+    h.record_odds("fd:1", "EUROPE", "A", "B", [{"market": "1", "odds": 2.1}], "2026-11-08T07:00:00.000+00:00")  # before any fetch
+    h.record_odds("fd:1", "EUROPE", "A", "B", [{"market": "1", "odds": 2.2}], "2026-11-08T13:00:00.000+00:00")
+    h.record_odds(None, "EUROPE", "C", "D", [{"market": "1", "odds": 2.0}], "2026-11-08T13:00:00.000+00:00")  # no key
+    pairs = h.typed_vs_sharp()
+    assert [(p["odds"], p["fetched_at"][11:16]) for p in pairs] == [(2.1, "08:00"), (2.2, "12:00")]
+    assert pairs[1]["sharp"] == {"1": 1.9} and pairs[1]["match_key"] == "fd:1"

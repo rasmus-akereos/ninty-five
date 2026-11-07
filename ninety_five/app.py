@@ -228,6 +228,36 @@ def _sharp_at_kickoff(bets: list[dict]) -> dict[int, float]:
     return out
 
 
+@app.get("/api/stats/soft")
+def stats_soft() -> dict:
+    """Typed Danske Spil prices against Pinnacle's fair prices, by league and market."""
+    fits: dict[tuple, dict] = {}  # one implied-goals fit per sharp fetch
+    rows = []
+    last: dict[tuple, dict] = {}  # only the last typed price per match and market (slips get corrected)
+    for p in history.typed_vs_sharp():
+        last[(p["match_key"], p["market"])] = p
+    for p in last.values():
+        ident = (p["match_key"], p["fetched_at"])
+        if ident not in fits:
+            direct = market_probabilities(p["sharp"])
+            try:
+                fitted = implied.grid(p["sharp"])
+            except Exception:
+                fitted = None
+            fits[ident] = {"direct": direct, "implied": markets(fitted[1]) if fitted else {}}
+        f = fits[ident]
+        prob, basis = f["direct"].get(p["market"]), "sharp"
+        if prob is None:
+            prob, basis = f["implied"].get(p["market"]), "implied"
+        if prob is None:
+            continue
+        m = history.match(p["match_key"]) or {}
+        rows.append({"competition": p["competition"], "market": p["market"], "odds": p["odds"],
+                     "gap": float(p["odds"] * prob - 1), "basis": basis, "fair": float(1 / prob),
+                     "match": f"{m.get('home', '')} – {m.get('away', '')}", "kickoff": m.get("kickoff")})
+    return stats.soft_prices(rows)
+
+
 @app.get("/api/stats/model")
 def stats_model() -> dict:
     return stats.model_insight(history.finished())

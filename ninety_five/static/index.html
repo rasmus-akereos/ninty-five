@@ -1174,7 +1174,32 @@ function renderBetting(s) {
   $("sub-betting").innerHTML = `<div class="kpis">${tiles}</div>${few}
     <div class="stats-grid"><div>${profitChart(s.curve)}</div><div>${dayChart(s.days)}</div></div>
     <div class="stats-grid tables">${groupTable("By league", "League", s.by_league)}${groupTable("By market", "Market", s.by_market)}${groupTable("By odds", "Odds", s.by_odds)}</div>
-    <p class="muted" style="font-size:12px">Per-day figures are averages over days you placed bets. Tables cover settled bets; faded rows have fewer than 10.</p>`;
+    <p class="muted" style="font-size:12px">Per-day figures are averages over days you placed bets. Tables cover settled bets; faded rows have fewer than 10.</p>
+    <div id="soft"><span class="muted">Loading Danske Spil vs Pinnacle…</span></div>`;
+  api("/api/stats/soft").then(renderSoft).catch(e => { if ($("soft")) $("soft").innerHTML = `<div class="note">${esc(e.message)}</div>`; });
+}
+
+// Where Danske Spil is soft: typed prices vs Pinnacle's fair prices.
+function softTable(title, col, rows) {
+  if (!rows.length) return "";
+  return `<div><h3 class="sub">${title}</h3><div class="scroll"><table>
+    <tr><th>${col}</th><th>Prices</th><th title="Average of your odds × Pinnacle's fair chance − 1">Avg vs fair</th><th>Above fair</th><th>Best</th></tr>
+    ${rows.map(g => `<tr class="${g.thin ? "faded" : ""}" ${g.thin ? 'title="Fewer than 10 prices: too few to read anything into"' : ""}>
+      <td>${esc(g.label)}</td><td>${g.n}${g.estimated ? ` <small class="muted">(${g.estimated}*)</small>` : ""}</td><td>${signedPct(g.avg_gap)}</td>
+      <td>${pct(g.above, 0)}</td><td>${signedPct(g.best)}</td></tr>`).join("")}
+  </table></div></div>`;
+}
+function renderSoft(r) {
+  if (!$("soft")) return;
+  if (!r.n) { $("soft").innerHTML = `<h3 class="sub">Where Danske Spil is soft</h3><p class="muted">No Danske Spil prices on matches with Pinnacle prices yet. Type odds on the board after a refresh and they'll show up here.</p>`; return; }
+  const top = r.top.filter(t => t.gap > 0);
+  $("soft").innerHTML = `<h3 class="sub">Where Danske Spil is soft</h3>
+    <p class="muted">Every Danske Spil price you've typed, against Pinnacle's fair price with the margin removed: ${r.n} prices, on average ${signedPct(r.avg_gap)}, ${pct(r.above, 0)} above fair.
+      The groups closest to (or above) zero are where it's worth looking for bets. Softest first.</p>
+    <div class="stats-grid tables">${softTable("By league", "League", r.by_league)}${softTable("By market", "Market", r.by_market)}</div>
+    ${top.length ? `<h3 class="sub">Prices above fair</h3><div class="scroll"><table><tr><th>Match</th><th>Selection</th><th>Odds</th><th>Fair</th><th>vs fair</th></tr>
+      ${top.map(t => `<tr><td>${esc(t.match)}</td><td>${esc(t.market)}${t.basis === "implied" ? "*" : ""}</td><td>${num(t.odds)}</td><td>${num(t.fair)}</td><td>${signedPct(t.gap)}</td></tr>`).join("")}</table></div>` : ""}
+    <p class="muted" style="font-size:12px">* estimated from the goals Pinnacle's prices imply (BTTS, most goal lines). Only the last price per match and market counts${r.excluded ? `; ${r.excluded} price${r.excluded > 1 ? "s" : ""} more than 35% off fair left out as likely typos` : ""}. Faded rows have fewer than 10 prices.</p>`;
 }
 
 const VERDICT = { "overrates": "model overrates", "underrates": "model underrates", "in line": "in line", "too few": "too few" };
