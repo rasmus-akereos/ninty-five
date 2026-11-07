@@ -100,3 +100,7 @@ def test_short_board_name_inside_longer_name_still_needs_both_teams():
 
 def test_danish_name_for_red_star():
     assert import_odds.same_team("Røde Stjerne", "Red Star Belgrade")
+
+
+def test_ob_is_odense():
+    assert import_odds.same_team("OB", "Odense")

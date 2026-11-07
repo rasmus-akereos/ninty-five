@@ -45,7 +45,7 @@ DANISH_COUNTRIES = {
 }
 # Danish club names on Danske Spil -> the model's (football-data.co.uk) names
 # (word by word; also used for the Europa and Conference League names)
-DANISH_CLUBS = {"koebenhavn": "copenhagen", "agf": "aarhus", "crvena": "red", "zvezda": "star", "roede": "red", "stjerne": "star",
+DANISH_CLUBS = {"koebenhavn": "copenhagen", "agf": "aarhus", "crvena": "red", "zvezda": "star", "roede": "red", "stjerne": "star", "ob": "odense",
                 "basaksehir": "buyuksehyr", "saint": "st", "cp": "lisbon"}  # Sporting CP = Sp Lisbon
 STOPWORDS = {"fc", "afc", "cf", "sk", "kv", "sc", "ac", "as", "fk", "club", "de", "the", "cd", "sv", "vfb", "vfl", "ss"}
 
