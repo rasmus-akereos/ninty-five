@@ -34,6 +34,14 @@ Method
 7. Cap the match. Markets on one match move together (Under 2.5, BTTS No and
    the draw are one opinion), so all bets on a match together stay within
    match_limit_pct of bankroll: each stake is cut to the room left.
+
+8. Sharp prices first. When a sharp bookmaker's (Pinnacle's) price for the
+   market is known (sharp_odds.py), its de-margined probability replaces the
+   blend: a walk-forward test showed it beats both the model and any blend
+   with it. The model is still reported. Against a sharp price a large edge
+   usually means a stale or mistyped price, or news the sharp price predates,
+   so stakes are halved from an edge of SHARP_AMBER and quartered from
+   SHARP_RED (the model-gap caution of point 6 doesn't apply).
 """
 
 from __future__ import annotations
@@ -77,6 +85,8 @@ class Selection:
     gap: float | None = None     # model minus market probability
     caution: str = ""            # "", "amber" (stake halved) or "red" (quartered)
     capped: bool = False         # stake cut by the match limit
+    p_sharp: float | None = None  # de-margined sharp-book probability, when known
+    basis: str = "blend"         # "sharp" (p = p_sharp) | "blend" | "model" (no market)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -117,9 +127,21 @@ def caution_for(gap: float | None, s: Settings) -> tuple[str, float]:
     return ("red", 0.25) if gap >= s.gap_warn + RED_STEP else ("amber", 0.5)
 
 
+SHARP_AMBER, SHARP_RED = 0.10, 0.20
+
+
+def sharp_caution(ev: float) -> tuple[str, float]:
+    """Caution level and stake multiplier for an edge measured against a sharp price."""
+    if ev >= SHARP_RED:
+        return "red", 0.25
+    return ("amber", 0.5) if ev >= SHARP_AMBER else ("", 1.0)
+
+
 def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings,
-             already_staked: float = 0.0) -> list[Selection]:
-    """`already_staked`: kroner already bet on this match (open bets)."""
+             already_staked: float = 0.0, sharp: dict[str, float] | None = None) -> list[Selection]:
+    """`already_staked`: kroner already bet on this match (open bets).
+    `sharp`: de-margined sharp-book probabilities by market (market_probabilities of its prices)."""
+    sharp = sharp or {}
     market = market_probabilities(odds)
     room = max(s.match_limit_pct * s.bankroll - already_staked, 0.0)
     rows = []
@@ -130,11 +152,15 @@ def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings,
         pk = None if market.get(name) is None else float(market[name])
         # Without a complete market we cannot de-margin; fall back to model only
         # but this is flagged in the UI because the edge is then less reliable.
-        p = pm if pk is None else s.alpha * pm + (1 - s.alpha) * pk
+        ps = sharp.get(name)
+        if ps is not None:
+            p, basis = float(ps), "sharp"
+        else:
+            p, basis = (pm, "model") if pk is None else (s.alpha * pm + (1 - s.alpha) * pk, "blend")
         ev = float(p * o - 1)
         kelly = max(ev / (o - 1), 0.0)
         gap = None if pk is None else pm - pk
-        caution, mult = caution_for(gap, s)
+        caution, mult = sharp_caution(ev) if basis == "sharp" else caution_for(gap, s)
         stake_pct = min(s.kelly_fraction * kelly * mult, s.max_stake_pct)
         rec = ev >= s.min_edge
         # Whole kroner: that's how stakes are placed. A recommended bet never
@@ -158,6 +184,8 @@ def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings,
                 gap=gap,
                 caution=caution,
                 capped=bool(capped),
+                p_sharp=None if ps is None else float(ps),
+                basis=basis,
             )
         )
     return sorted(rows, key=lambda r: r.ev, reverse=True)

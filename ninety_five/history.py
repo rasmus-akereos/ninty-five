@@ -96,6 +96,22 @@ CREATE TABLE IF NOT EXISTS fetch_runs (
     warnings TEXT NOT NULL,        -- JSON list
     error TEXT                     -- NULL when the run succeeded
 );
+CREATE TABLE IF NOT EXISTS sharp_prices (  -- sharp bookmaker prices (sharp_odds.py)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_key TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    market TEXT NOT NULL,          -- 1 | X | 2 | Over 2.5 | ...
+    odds REAL NOT NULL,
+    book TEXT NOT NULL             -- pinnacle | betfair_ex_eu | matchbook
+);
+CREATE INDEX IF NOT EXISTS sharp_match ON sharp_prices(match_key, fetched_at);
+CREATE TABLE IF NOT EXISTS odds_api_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    sport TEXT NOT NULL,
+    cost INTEGER NOT NULL,
+    remaining INTEGER              -- credits left after the call
+);
 """
 
 
@@ -348,6 +364,45 @@ class HistoryStore:
         """match_key -> competition for every board match seen."""
         with self._conn() as c:
             return {r["key"]: r["competition"] for r in c.execute("SELECT key, competition FROM matches")}
+
+    # ------------------------------------------------------ sharp prices
+    def save_sharp(self, match_key: str, fetched_at: str, prices: dict[str, dict]) -> None:
+        with self._conn() as c:
+            c.executemany(
+                "INSERT INTO sharp_prices (match_key, fetched_at, market, odds, book) VALUES (?, ?, ?, ?, ?)",
+                [(match_key, fetched_at, m, p["odds"], p["book"]) for m, p in prices.items()])
+
+    def sharp_for(self, match_key: str | None) -> dict | None:
+        """The latest fetch's sharp prices for a match: {"fetched_at", "prices":
+        {market: {"odds", "book"}}}, or None."""
+        if not match_key:
+            return None
+        with self._conn() as c:
+            last = c.execute("SELECT MAX(fetched_at) AS t FROM sharp_prices WHERE match_key = ?",
+                             (match_key,)).fetchone()["t"]
+            if last is None:
+                return None
+            rows = c.execute("SELECT market, odds, book FROM sharp_prices WHERE match_key = ? AND fetched_at = ?",
+                             (match_key, last)).fetchall()
+        return {"fetched_at": last, "prices": {r["market"]: {"odds": r["odds"], "book": r["book"]} for r in rows}}
+
+    def log_odds_api(self, at: str, sport: str, cost: int, remaining: int | None) -> None:
+        with self._conn() as c:
+            c.execute("INSERT INTO odds_api_calls (at, sport, cost, remaining) VALUES (?, ?, ?, ?)",
+                      (at, sport, cost, remaining))
+
+    def odds_api_state(self, now: pd.Timestamp) -> dict:
+        """Credits left (None before the first call; the counter resets on
+        the 1st), credits spent today (UTC) and each league's last fetch."""
+        month, day = now.strftime("%Y-%m"), now.strftime("%Y-%m-%d")
+        with self._conn() as c:
+            last = c.execute("SELECT at, remaining FROM odds_api_calls WHERE remaining IS NOT NULL "
+                             "ORDER BY id DESC LIMIT 1").fetchone()
+            spent = c.execute("SELECT COALESCE(SUM(cost), 0) AS s FROM odds_api_calls WHERE substr(at, 1, 10) = ?",
+                              (day,)).fetchone()["s"]
+            fetched = {r["sport"]: r["t"] for r in c.execute("SELECT sport, MAX(at) AS t FROM odds_api_calls GROUP BY sport")}
+        remaining = last["remaining"] if last and last["at"][:7] == month else None
+        return {"remaining": remaining, "spent_today": int(spent), "last_fetch": fetched}
 
     # ------------------------------------------------------------ tuning
     REVERT_BLOCK_DAYS = 30

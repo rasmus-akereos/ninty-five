@@ -50,7 +50,7 @@ def client(tmp_path, monkeypatch):
 
 def test_get_board_empty_db(client):
     r = client.get("/api/fixtures").json()
-    assert r == {"fixtures": [], "fetched_at": None, "stale": True, "last_auto": None}
+    assert r == {"fixtures": [], "sharp": {"enabled": False}, "fetched_at": None, "stale": True, "last_auto": None}
 
 
 def test_refresh_then_get_serves_stored(client, monkeypatch):
@@ -297,3 +297,18 @@ def test_evaluate_counts_open_bets_on_the_match(client):
     r = client.post("/api/evaluate", json=body).json()
     assert r["match_exposure"] == {"staked": 45, "limit": 50}
     assert all(s["stake"] <= 5 for s in r["selections"])
+
+
+def test_evaluate_uses_stored_sharp_prices(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    app_mod.history.save_sharp("fd:1", "2026-11-03T09:00:00+00:00", {
+        "1": {"odds": 2.0, "book": "pinnacle"}, "X": {"odds": 3.6, "book": "pinnacle"},
+        "2": {"odds": 4.2, "book": "pinnacle"}})
+    body = {"dataset": "EUROPE", "home": "A", "away": "B", "match_key": "fd:1", "odds": FULL_1X2}
+    r = client.post("/api/evaluate", json=body).json()
+    assert r["sharp"]["books"] == ["Pinnacle"] and r["sharp"]["odds"]["1"] == 2.0
+    sel = {s["market"]: s for s in r["selections"]}
+    assert sel["1"]["basis"] == "sharp" and sel["1"]["p_blend"] == pytest.approx(r["sharp"]["probabilities"]["1"])
+    # Without a board match there are no sharp prices.
+    r = client.post("/api/evaluate", json={**body, "match_key": None}).json()
+    assert r["sharp"] is None and all(s["basis"] != "sharp" for s in r["selections"])

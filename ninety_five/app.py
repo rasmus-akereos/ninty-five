@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import fixtures, import_odds, scheduler, service, stats, track, tuning, uefa, validate
+from . import fixtures, import_odds, scheduler, service, sharp_odds, stats, track, tuning, uefa, validate
 from .model import DixonColes, markets
 from .history import HistoryStore
 from .store import BetStore, DuplicateBet
@@ -106,6 +106,21 @@ def datasets() -> dict[str, str]:
 STALE_AFTER = pd.Timedelta(hours=6)
 
 
+def _credits() -> dict:
+    """The Odds API's state for the board: whether a key is set, credits left
+    and today's allowance."""
+    if not sharp_odds.api_key():
+        return {"enabled": False}
+    now = pd.Timestamp.now(tz="UTC")
+    try:
+        st = history.odds_api_state(now)
+    except Exception as exc:
+        log.warning("could not read odds api state: %s", exc)
+        return {"enabled": True}
+    return {"enabled": True, "remaining": st["remaining"], "spent_today": st["spent_today"],
+            "allowance": sharp_odds.allowance(st["remaining"], st["spent_today"], now)}
+
+
 def _stored_board(days: int, min_edge: float) -> dict:
     fetched = history.fetched_at()
     stale = fetched is None or pd.Timestamp.now(tz="UTC") - pd.Timestamp(fetched) > STALE_AFTER
@@ -119,6 +134,7 @@ def _stored_board(days: int, min_edge: float) -> dict:
         rows.append(r)
     return {
         "fixtures": rows,
+        "sharp": _credits(),
         "fetched_at": fetched,
         "stale": stale,
         "last_auto": history.last_run("auto"),
@@ -265,9 +281,15 @@ def evaluate_match(req: EvaluateIn) -> dict:
     except Exception as exc:
         log.warning("could not read tuned settings: %s", exc)
         alpha, alpha_scope = tuning.ALPHA_DEFAULT, "default"
+    sharp = None
+    try:
+        sharp = history.sharp_for(req.match_key)
+    except Exception as exc:  # history must never break pricing
+        log.warning("could not read sharp prices: %s", exc)
+    sharp_probs = market_probabilities({m: p["odds"] for m, p in sharp["prices"].items()}) if sharp else {}
     already = _staked_on(req)
     st = Settings(alpha=alpha, **req.settings.model_dump())
-    selections = evaluate(probs, odds, st, already_staked=already)
+    selections = evaluate(probs, odds, st, already_staked=already, sharp=sharp_probs)
     # Previous visit's prices are shown as hints, so read them before storing.
     last_odds: dict = {}
     try:
@@ -297,6 +319,12 @@ def evaluate_match(req: EvaluateIn) -> dict:
         "selections": [s.to_dict() for s in selections],
         "last_odds": last_odds,
         "alpha": {"value": alpha, "scope": alpha_scope},
+        "sharp": None if not sharp else {
+            "fetched_at": sharp["fetched_at"],
+            "books": sorted({sharp_odds.BOOK_NAMES.get(p["book"], p["book"]) for p in sharp["prices"].values()}),
+            "odds": {m: p["odds"] for m, p in sharp["prices"].items()},
+            "probabilities": sharp_probs,
+        },
     }
 
 

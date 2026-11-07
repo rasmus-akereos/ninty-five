@@ -361,7 +361,8 @@ function setBoard(r, extra = "") {
     if (f) open.fixture = f; else open = null;
   }
   const updated = r.fetched_at ? ` · updated ${hhmm(r.fetched_at)}` : "";
-  $("board-info").textContent = `${board.length} matches${updated}${autoInfo(r.last_auto)}${extra} · prices are the minimum odds worth betting (edge ≥ ${$("boardedge").value}%) · click a match to open it`;
+  const sh = r.sharp && r.sharp.enabled && r.sharp.remaining != null ? ` · sharp odds: ${r.sharp.remaining} of 500 credits left` : "";
+  $("board-info").textContent = `${board.length} matches${updated}${autoInfo(r.last_auto)}${sh}${extra} · prices are the minimum odds worth betting (edge ≥ ${$("boardedge").value}%) · click a match to open it`;
   renderBoard();
 }
 
@@ -596,8 +597,10 @@ function readOdds() {
   return odds;
 }
 
+// The sharp (Pinnacle) price when known, else the model.
 function minOdds(market) {
-  const p = open && open.result && open.result.probabilities[market];
+  const r = open && open.result;
+  const p = r && ((r.sharp && r.sharp.probabilities[market]) || r.probabilities[market]);
   return p ? (1 + boardEdge()) / p : null;
 }
 
@@ -614,7 +617,9 @@ function markHits() {
     const caution = same && s.recommended && !!s.caution;  // worth it on paper, but the market disagrees a lot
     el.classList.toggle("hit", hit && !caution);
     el.classList.toggle("caution", caution);
-    el.title = caution ? `Model ${pct(s.p_model)} vs market ${pct(s.p_market)}: big disagreement, stake cut` : "";
+    el.title = !caution ? "" : s.basis === "sharp"
+      ? `Pays ${pct(s.ev)} more than Pinnacle's fair price: check the price, stake cut`
+      : `Model ${pct(s.p_model)} vs market ${pct(s.p_market)}: big disagreement, stake cut`;
   });
 }
 
@@ -656,14 +661,21 @@ function renderResult(r) {
   if (ex && ex.staked > 0) notes.push(ex.staked >= ex.limit
     ? `Match limit reached: ${num(ex.staked, 0)} of ${num(ex.limit, 0)} kr already on this match. Markets on one match win or lose together.`
     : `${num(ex.staked, 0)} of ${num(ex.limit, 0)} kr match limit used. Suggested stakes fit in the ${num(ex.limit - ex.staked, 0)} kr left.`);
-  if (r.selections.some(s => s.recommended && s.caution))
+  if (r.sharp) {
+    const o = r.sharp.odds, line = ["1", "X", "2"].every(k => o[k]) ? `1 ${num(o["1"])} · X ${num(o.X)} · 2 ${num(o["2"])}` : "";
+    notes.push(`Judged against ${r.sharp.books.join(" / ")}${line ? ` (${line})` : ""}, fetched ${hhmm(r.sharp.fetched_at)}: a bet is suggested only when Danske Spil pays more than that fair price. The model is shown for comparison.`);
+    if (r.selections.some(s => s.basis !== "sharp")) notes.push("Markets without a sharp price use the model blend as before.");
+  } else if (open && open.fixture) notes.push("No sharp price for this match (league not covered, or not fetched yet): using the model blend.");
+  if (r.selections.some(s => s.recommended && s.caution && s.basis === "sharp"))
+    notes.push("Red boxes: Danske Spil pays far more than Pinnacle. That's usually a stale or mistyped price, or news since Pinnacle's price was fetched, so check before betting. Stakes are cut: half from a 10% edge, a quarter from 20%.");
+  if (r.selections.some(s => s.recommended && s.caution && s.basis !== "sharp"))
     notes.push(`Red boxes: the model rates these far above the market. The market usually knows something the model doesn't (injuries, line-ups, form), so their stakes are cut: half from ${+$("gapwarn").value} points apart, a quarter from ${+$("gapwarn").value + 10}.`);
-  if (r.alpha) notes.push(`Blend uses model weight ${num(r.alpha.value)} (${alphaScope(r.alpha.scope)}), tuned automatically.`);
+  if (r.alpha && r.selections.some(s => s.basis === "blend")) notes.push(`Blend uses model weight ${num(r.alpha.value)} (${alphaScope(r.alpha.scope)}), tuned automatically.`);
   const sel = r.selections.length ? `<div class="scroll"><table>
-      <tr><th>Selection</th><th>Odds</th><th>Model</th><th>Market (no margin)</th><th>Blend</th><th>Fair odds</th><th>EV</th><th>Stake</th><th></th></tr>
+      <tr><th>Selection</th><th>Odds</th><th>Model</th><th>Danske Spil (no margin)</th><th>Pinnacle (no margin)</th><th title="The probability the edge is computed from: Pinnacle's when known, else the model blend">Used</th><th>Fair odds</th><th>EV</th><th>Stake</th><th></th></tr>
       ${r.selections.map((s, i) => `<tr class="${s.recommended ? "rec" : ""}${s.recommended && s.caution ? " caution" : ""}">
-        <td>${esc(s.market)}${s.recommended && s.caution ? `<span class="gap ${s.caution}" title="Model minus market">+${Math.round(s.gap * 100)} pts</span>` : ""}</td><td>${num(s.odds)}</td><td>${pct(s.p_model)}</td><td>${pct(s.p_market)}</td>
-        <td>${pct(s.p_blend)}</td><td>${num(s.fair_odds)}</td>
+        <td>${esc(s.market)}${s.recommended && s.caution ? `${s.basis === "sharp" ? `<span class="gap ${s.caution}" title="Edge over Pinnacle's fair price">+${Math.round(s.ev * 100)}% vs Pinnacle</span>` : `<span class="gap ${s.caution}" title="Model minus market">+${Math.round(s.gap * 100)} pts</span>`}` : ""}</td><td>${num(s.odds)}</td><td>${pct(s.p_model)}</td><td>${pct(s.p_market)}</td>
+        <td>${s.p_sharp == null ? "–" : pct(s.p_sharp)}</td><td>${pct(s.p_blend)}${s.basis === "sharp" ? ` <span class="muted">P</span>` : ""}</td><td>${num(s.fair_odds)}</td>
         <td class="${s.ev >= 0 ? "pos" : "neg"}">${pct(s.ev)}</td>
         <td>${!s.recommended ? "–" : s.capped && s.stake === 0 ? `<span class="muted">limit</span>` : num(s.stake, 0) + " kr"}</td>
         <td>${logCell(s, i, mine)}</td></tr>`).join("")}

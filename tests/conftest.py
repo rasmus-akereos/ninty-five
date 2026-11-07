@@ -26,3 +26,17 @@ def offline_lower_league_fixtures(monkeypatch):
     league_fixtures._cache.clear()
     yield
     league_fixtures._cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def offline_sharp_odds(monkeypatch):
+    """Tests never call The Odds API: no key unless a test sets one, and any
+    request fails loudly."""
+    from ninety_five import sharp_odds
+
+    monkeypatch.setattr(sharp_odds, "api_key", lambda: None)
+
+    def no_network(path, params):
+        raise AssertionError("test tried to call The Odds API")
+
+    monkeypatch.setattr(sharp_odds, "_get", no_network)

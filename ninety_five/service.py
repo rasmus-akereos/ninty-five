@@ -10,7 +10,7 @@ import uuid
 import pandas as pd
 
 from . import data as data_mod
-from . import cup_fixtures, fixtures, intl_fixtures, league_fixtures, uefa
+from . import cup_fixtures, fixtures, intl_fixtures, league_fixtures, sharp_odds, uefa
 from .model import CLUB_PARAMS, INTL_PARAMS, DixonColes, markets
 
 LEAGUE_LOOKBACK_DAYS = 31
@@ -359,6 +359,7 @@ def refresh_board(history, bets, days: int, now: pd.Timestamp | None = None) -> 
     now = now or pd.Timestamp.now(tz="UTC")
     rows, warnings = build_board(days)
     snapshots = history.save_board(rows, now.isoformat(timespec="seconds"))
+    warnings += sharp_odds.update(history, history.board(3, now=now), now)
     settled: list[int] = []
     try:
         settled = update_results(history, bets, now)
