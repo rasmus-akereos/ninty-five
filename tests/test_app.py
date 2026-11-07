@@ -356,3 +356,43 @@ def test_bet_detail_shows_the_prices_around_the_bet(client):
 
 def test_bet_detail_unknown_bet_is_404(client):
     assert client.get("/api/bets/999/detail").status_code == 404
+
+
+def _pinnacle(key="fd:1"):
+    app_mod.history.save_sharp(key, "2026-11-03T09:00:00+00:00", {
+        "1": {"odds": 2.0, "book": "pinnacle"}, "X": {"odds": 3.6, "book": "pinnacle"},
+        "2": {"odds": 4.2, "book": "pinnacle"}, "Over 2.5": {"odds": 1.95, "book": "pinnacle"},
+        "Under 2.5": {"odds": 1.95, "book": "pinnacle"}})
+
+
+def test_evaluate_prices_btts_from_pinnacle_implied_goals(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    _pinnacle()
+    body = {"dataset": "EUROPE", "home": "A", "away": "B", "match_key": "fd:1",
+            "odds": {"BTTS Yes": 1.9, "BTTS No": 1.9, "1": 2.1, "X": 3.4, "2": 3.9}}
+    r = client.post("/api/evaluate", json=body).json()
+    sel = {s["market"]: s for s in r["selections"]}
+    assert sel["1"]["basis"] == "sharp" and sel["BTTS Yes"]["basis"] == "implied"
+    assert len(r["sharp"]["implied"]["xg"]) == 2
+    assert sel["BTTS Yes"]["p_blend"] == pytest.approx(r["sharp"]["implied"]["probabilities"]["BTTS Yes"])
+
+
+def test_combo_is_priced_from_pinnacle_when_known(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    _pinnacle()
+    body = {"dataset": "EUROPE", "home": "A", "away": "B", "match_key": "fd:1", "legs": ["X", "Under 2.5"], "odds": 6.0}
+    r = client.post("/api/combo", json=body).json()
+    s = r["selection"]
+    assert s["market"] == "X + Under 2.5" and s["basis"] == "implied"
+    assert s["ev"] == pytest.approx(s["p_blend"] * 6.0 - 1)
+    assert s["p_blend"] > r["independent"]  # the legs go together
+    # Without Pinnacle prices the model prices it.
+    r = client.post("/api/combo", json={**body, "match_key": None}).json()
+    assert r["selection"]["basis"] == "model"
+
+
+def test_combo_rejects_unknown_or_too_few_legs(client):
+    body = {"dataset": "EUROPE", "home": "A", "away": "B", "legs": ["X", "Corners 9.5"], "odds": 6.0}
+    assert client.post("/api/combo", json=body).status_code == 400
+    assert client.post("/api/combo", json={**body, "legs": ["X"]}).status_code == 422  # request validation
+    assert client.post("/api/combo", json={**body, "legs": ["1", "2"]}).status_code == 400  # can't both win

@@ -75,3 +75,7 @@ def test_vs_pinnacle_averages_bets_with_a_price_before_kickoff():
 def test_vs_pinnacle_empty_without_prices():
     t = stats.betting([_b()], {})["tiles"]
     assert t["avg_vs_pinnacle"] is None and t["n_vs_pinnacle"] == 0
+
+
+def test_combos_are_their_own_market_group():
+    assert stats.market_group("X + Under 2.5") == "Bet Builder"

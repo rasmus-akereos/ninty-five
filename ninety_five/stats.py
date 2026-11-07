@@ -24,6 +24,8 @@ def _day(iso: str) -> str:
 
 
 def market_group(market: str) -> str:
+    if " + " in market:
+        return "Bet Builder"
     if market in ("1", "X", "2"):
         return "1X2"
     if market.startswith(("Over ", "Under ")):

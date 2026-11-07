@@ -161,6 +161,13 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
 #bets tr.betdetail > td { background: var(--panel-2); padding: 8px 12px 12px; }
 .betinfo .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 16px; font-size: 13px; margin-bottom: 8px; }
 .betinfo .oddsgrid tr.mine td { font-weight: 700; color: var(--accent); }
+.builder { margin: 10px 0; font-size: 13px; }
+.builder summary { cursor: pointer; font-weight: 600; }
+.bbrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.bbrow select, .bbrow input { min-width: 0; flex: 1 1 120px; }
+.bbres { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); }
+.bbres.rec { background: var(--good-bg); }
+.bbres.caution { border-color: var(--bad); }
 .mybets { background: var(--good-bg); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); border-radius: 10px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
 .mybets table { margin: 4px 0 0; }
 .mybets td, .mybets th { padding: 2px 10px 2px 0; border: 0; background: none; }
@@ -330,6 +337,77 @@ const placedBadge = f => {
 };
 const betLine = b => `${b.market} · ${num(b.stake, 0)} kr @ ${num(b.odds)}`;
 // The open bets on the folded-open match, with what each pays if it wins.
+// --------------------------------------------------------- Bet Builder
+// One Danske Spil bet made of several legs on the same match ("Sunderland wins
+// and both teams score"): all must win. Priced on the server from the score
+// grid (Pinnacle-implied goals when known), because the legs are correlated.
+const BB_PARTS = {
+  result: ["", "1", "X", "2", "1X", "12", "X2"],
+  goals: ["", ...[0.5, 1.5, 2.5, 3.5, 4.5].flatMap(l => [`Over ${l}`, `Under ${l}`])],
+  btts: ["", "BTTS Yes", "BTTS No"],
+};
+const BB_LABEL = { "": "–", "1": "Home wins", "X": "Draw", "2": "Away wins", "1X": "Home or draw", "12": "Home or away", "X2": "Draw or away",
+  "BTTS Yes": "Both score", "BTTS No": "Not both score" };
+const bbState = () => (open.builder = open.builder || { result: "", goals: "", btts: "", odds: "", out: null });
+const bbLegs = b => [b.result, b.goals, b.btts].filter(Boolean);
+
+function builderHtml() {
+  if (!open) return "";
+  const b = bbState();
+  const select = part => `<select data-bb="${part}" aria-label="${part}">${BB_PARTS[part].map(v =>
+    `<option value="${esc(v)}"${b[part] === v ? " selected" : ""}>${esc(BB_LABEL[v] || v)}</option>`).join("")}</select>`;
+  return `<details class="builder"${b.result || b.goals || b.btts ? " open" : ""}><summary>Bet Builder: check a combined bet</summary>
+    <div class="bbrow">${select("result")}${select("goals")}${select("btts")}
+      <input data-bb="odds" inputmode="decimal" autocomplete="off" placeholder="Danske Spil odds" value="${esc(b.odds)}" aria-label="Danske Spil odds for the combination"></div>
+    <div id="bb-out">${builderOut(b)}</div>
+    <p class="muted">Pick the legs exactly as Danske Spil offers them (e.g. "Kampvinder og begge hold scorer") and type its price. All legs must win.</p></details>`;
+}
+
+function builderOut(b) {
+  const legs = bbLegs(b);
+  if (legs.length < 2) return `<span class="muted">Pick at least two legs.</span>`;
+  if (b.error) return `<div class="note">${esc(b.error)}</div>`;
+  const r = b.out;
+  if (!r) return parseOdds(b.odds) ? `<span class="muted">Pricing…</span>` : `<span class="muted">Type Danske Spil's price for the combination.</span>`;
+  const s = r.selection, src = s.basis === "implied" ? `Pinnacle-implied goals (prices from ${hhmm(r.fetched_at)})` : "the model (no Pinnacle price for this match)";
+  const mine = openBetsFor({ key: open.fixture ? open.fixture.key : null, dataset: open.dataset, home: open.home, away: open.away });
+  const had = mine.find(x => x.market === s.market);
+  const log = had ? `<span class="logged">Logged · ${num(had.stake, 0)} kr @ ${num(had.odds)}</span>`
+    : s.recommended && s.stake > 0 ? `<span class="logbox"><input data-stake="combo" inputmode="decimal" autocomplete="off" value="${num(s.stake, 0)}" aria-label="Stake (kr)"><button class="small" data-log="combo">Log</button></span>` : "";
+  return `<div class="bbres ${s.recommended ? (s.caution ? "caution" : "rec") : ""}">
+    <b>${esc(s.market)}</b> @ ${num(s.odds)} · chance ${pct(s.p_blend)} · fair odds <b>${num(s.fair_odds)}</b> ·
+    edge <span class="${s.ev >= 0 ? "pos" : "neg"}">${s.ev >= 0 ? "+" : ""}${pct(s.ev)}</span>
+    ${s.recommended ? (s.caution ? ` · <span class="gap ${s.caution}">check the price</span>` : " · worth betting") : ""} ${log}
+    <div class="muted">From ${src}. As separate bets multiplied: ${num(1 / r.independent)}. Worth betting from ${num((1 + +$("minedge").value / 100) * s.fair_odds)}.</div></div>`;
+}
+
+let bbSeq = 0;
+async function priceBuilder() {
+  const target = open, b = bbState(), legs = bbLegs(b), odds = parseOdds(b.odds), seq = ++bbSeq;
+  b.out = null; b.error = null;
+  const paint = () => { if (open === target && $("bb-out")) { $("bb-out").innerHTML = builderOut(b); wireBuilderLog(); } };
+  paint();
+  if (legs.length < 2 || !odds) return;
+  try {
+    b.out = await api("/api/combo", { method: "POST", body: JSON.stringify({
+      dataset: target.dataset, home: target.home, away: target.away, neutral: target.neutral, legs, odds,
+      settings: settings(), match_key: target.fixture ? target.fixture.key : null }) });
+  } catch (e) { b.error = e.message; }
+  if (seq === bbSeq) paint();
+}
+
+function wireBuilderLog() {
+  const btn = document.querySelector('#bb-out [data-log="combo"]');
+  if (btn) btn.onclick = () => logBet(open.builder.out.selection, btn);
+}
+
+function wireBuilder() {
+  document.querySelectorAll("#f-result [data-bb]").forEach(el => {
+    el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => { bbState()[el.dataset.bb] = el.value; priceBuilder(); });
+  });
+  wireBuilderLog();
+}
+
 // "vs Pinnacle now": how much better the bet's odds are than Pinnacle's fair
 // price (odds × fair probability − 1). Positive = you got a better price than
 // the sharp market now thinks the outcome is worth.
@@ -645,7 +723,7 @@ function markHits() {
     const caution = same && s.recommended && !!s.caution;  // worth it on paper, but the market disagrees a lot
     el.classList.toggle("hit", hit && !caution);
     el.classList.toggle("caution", caution);
-    el.title = !caution ? "" : s.basis === "sharp"
+    el.title = !caution ? "" : s.basis === "sharp" || s.basis === "implied"
       ? `Pays ${pct(s.ev)} more than Pinnacle's fair price: check the price, stake cut`
       : `Model ${pct(s.p_model)} vs market ${pct(s.p_market)}: big disagreement, stake cut`;
   });
@@ -691,29 +769,33 @@ function renderResult(r) {
   if (r.sharp) {
     const o = r.sharp.odds, line = ["1", "X", "2"].every(k => o[k]) ? `1 ${num(o["1"])} · X ${num(o.X)} · 2 ${num(o["2"])}` : "";
     notes.push(`Judged against ${r.sharp.books.join(" / ")}${line ? ` (${line})` : ""}, fetched ${hhmm(r.sharp.fetched_at)}: a bet is suggested only when Danske Spil pays more than that fair price. The model is shown for comparison.`);
-    if (r.selections.some(s => s.basis !== "sharp")) notes.push("Markets without a sharp price use the model blend as before.");
+    if (r.sharp.implied) notes.push(`Markets Pinnacle doesn't price (BTTS, most goal lines) are estimated from the goals its prices imply: ${num(r.sharp.implied.xg[0])} – ${num(r.sharp.implied.xg[1])}. Marked P* in the table.`);
+    if (r.selections.some(s => s.basis !== "sharp" && s.basis !== "implied")) notes.push("Markets without a sharp price use the model blend as before.");
   } else if (open && open.fixture) notes.push("No sharp price for this match (league not covered, or not fetched yet): using the model blend.");
-  if (r.selections.some(s => s.recommended && s.caution && s.basis === "sharp"))
+  if (r.selections.some(s => s.recommended && s.caution && (s.basis === "sharp" || s.basis === "implied")))
     notes.push("Red boxes: Danske Spil pays far more than Pinnacle. That's usually a stale or mistyped price, or news since Pinnacle's price was fetched, so check before betting. Stakes are cut: half from a 10% edge, a quarter from 20%.");
-  if (r.selections.some(s => s.recommended && s.caution && s.basis !== "sharp"))
+  if (r.selections.some(s => s.recommended && s.caution && s.basis !== "sharp" && s.basis !== "implied"))
     notes.push(`Red boxes: the model rates these far above the market. The market usually knows something the model doesn't (injuries, line-ups, form), so their stakes are cut: half from ${+$("gapwarn").value} points apart, a quarter from ${+$("gapwarn").value + 10}.`);
   if (r.alpha && r.selections.some(s => s.basis === "blend")) notes.push(`Blend uses model weight ${num(r.alpha.value)} (${alphaScope(r.alpha.scope)}), tuned automatically.`);
   const sel = r.selections.length ? `<div class="scroll"><table>
       <tr><th>Selection</th><th>Odds</th><th>Model</th><th>Danske Spil (no margin)</th><th>Pinnacle (no margin)</th><th title="The probability the edge is computed from: Pinnacle's when known, else the model blend">Used</th><th>Fair odds</th><th>EV</th><th>Stake</th><th></th></tr>
       ${r.selections.map((s, i) => `<tr class="${s.recommended ? "rec" : ""}${s.recommended && s.caution ? " caution" : ""}">
-        <td>${esc(s.market)}${s.recommended && s.caution ? `${s.basis === "sharp" ? `<span class="gap ${s.caution}" title="Edge over Pinnacle's fair price">+${Math.round(s.ev * 100)}% vs Pinnacle</span>` : `<span class="gap ${s.caution}" title="Model minus market">+${Math.round(s.gap * 100)} pts</span>`}` : ""}</td><td>${num(s.odds)}</td><td>${pct(s.p_model)}</td><td>${pct(s.p_market)}</td>
-        <td>${s.p_sharp == null ? "–" : pct(s.p_sharp)}</td><td>${pct(s.p_blend)}${s.basis === "sharp" ? ` <span class="muted">P</span>` : ""}</td><td>${num(s.fair_odds)}</td>
+        <td>${esc(s.market)}${s.recommended && s.caution ? `${s.basis === "sharp" || s.basis === "implied" ? `<span class="gap ${s.caution}" title="Edge over Pinnacle's fair price">+${Math.round(s.ev * 100)}% vs Pinnacle</span>` : `<span class="gap ${s.caution}" title="Model minus market">+${Math.round(s.gap * 100)} pts</span>`}` : ""}</td><td>${num(s.odds)}</td><td>${pct(s.p_model)}</td><td>${pct(s.p_market)}</td>
+        <td${s.basis === "implied" ? ' title="Estimated from the goals implied by Pinnacle\'s 1X2 and over/under prices"' : ""}>${s.p_sharp == null ? "–" : pct(s.p_sharp) + (s.basis === "implied" ? "*" : "")}</td><td>${pct(s.p_blend)}${s.basis === "sharp" ? ` <span class="muted">P</span>` : s.basis === "implied" ? ` <span class="muted">P*</span>` : ""}</td><td>${num(s.fair_odds)}</td>
         <td class="${s.ev >= 0 ? "pos" : "neg"}">${pct(s.ev)}</td>
         <td>${!s.recommended ? "–" : s.capped && s.stake === 0 ? `<span class="muted">limit</span>` : num(s.stake, 0) + " kr"}</td>
         <td>${logCell(s, i, mine)}</td></tr>`).join("")}
-    </table></div><div id="f-lognote"></div>` : `<p class="muted">Type Danske Spil odds above. A box turns green when the price is worth betting. Enter every outcome of a market for an honest edge.</p>`;
+    </table></div>` : `<p class="muted">Type Danske Spil odds above. A box turns green when the price is worth betting. Enter every outcome of a market for an honest edge.</p>`;
   $("f-result").innerHTML = `
     <p><b>${esc(r.home)}</b> ${num(r.xg[0])} – ${num(r.xg[1])} <b>${esc(r.away)}</b> <span class="muted">expected goals ·
       1 ${pct(r.probabilities["1"])} · X ${pct(r.probabilities["X"])} · 2 ${pct(r.probabilities["2"])} ·
       likely ${r.top_scores.slice(0, 3).map(s => s.score).join(", ")}</span></p>
     ${myBetsBox(mine, r.sharp)}
     ${notes.map(n => `<div class="note">${esc(n)}</div>`).join("")}
-    ${sel}`;
+    ${sel}
+    ${builderHtml()}
+    <div id="f-lognote"></div>`;
+  wireBuilder();
   $("f-result").querySelectorAll("[data-log]").forEach(b => b.onclick = () => logBet(r.selections[+b.dataset.log], b));
   $("f-result").querySelectorAll("[data-stake]").forEach(inp => inp.oninput = () => {
     (open.stakes = open.stakes || {})[r.selections[+inp.dataset.stake].market] = inp.value;

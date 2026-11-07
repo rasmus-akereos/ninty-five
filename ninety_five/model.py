@@ -256,8 +256,43 @@ def markets(m: np.ndarray) -> dict[str, float]:
     return {k: float(v) for k, v in out.items()}
 
 
+COMBO_SEP = " + "  # a Bet Builder bet: "X + Under 2.5" wins when every leg does
+
+
+def market_mask(market: str, shape: tuple[int, int]) -> np.ndarray:
+    """Boolean score grid: True where `market` wins. ValueError for markets
+    the app doesn't know."""
+    i, j = np.indices(shape)
+    total = i + j
+    masks = {"1": i > j, "X": i == j, "2": i < j, "1X": i >= j, "12": i != j, "X2": i <= j,
+             "BTTS Yes": (i > 0) & (j > 0), "BTTS No": (i == 0) | (j == 0)}
+    if market in masks:
+        return masks[market]
+    side, _, line = market.partition(" ")
+    if side in ("Over", "Under"):
+        try:
+            x = float(line)
+        except ValueError:
+            pass
+        else:
+            return total > x if side == "Over" else total < x
+    raise ValueError(f"Unknown market {market!r}")
+
+
+def combo_probability(m: np.ndarray, legs: list[str]) -> float:
+    """P(every leg wins) from a score matrix: the scores where all legs win.
+    Legs of one match are correlated, so this is not the product of the singles."""
+    mask = np.ones(m.shape, dtype=bool)
+    for leg in legs:
+        mask &= market_mask(leg, m.shape)
+    return float(m[mask].sum())
+
+
 def settle(market: str, hg: int, ag: int) -> bool | None:
     """True if `market` wins for final score hg-ag, False if it loses."""
+    if COMBO_SEP in market:
+        legs = [settle(leg, hg, ag) for leg in market.split(COMBO_SEP)]
+        return None if None in legs else all(legs)
     total = hg + ag
     if market == "1":
         return hg > ag

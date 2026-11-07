@@ -12,8 +12,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import fixtures, import_odds, scheduler, service, sharp_odds, stats, track, tuning, uefa, validate
-from .model import DixonColes, markets
+from . import fixtures, implied, import_odds, scheduler, service, sharp_odds, stats, track, tuning, uefa, validate
+from .model import COMBO_SEP, DixonColes, combo_probability, markets
 from .history import HistoryStore
 from .store import BetStore, DuplicateBet
 from .value import Settings, evaluate, market_probabilities, overround
@@ -304,15 +304,11 @@ def evaluate_match(req: EvaluateIn) -> dict:
     except Exception as exc:
         log.warning("could not read tuned settings: %s", exc)
         alpha, alpha_scope = tuning.ALPHA_DEFAULT, "default"
-    sharp = None
-    try:
-        sharp = history.sharp_for(req.match_key)
-    except Exception as exc:  # history must never break pricing
-        log.warning("could not read sharp prices: %s", exc)
-    sharp_probs = market_probabilities({m: p["odds"] for m, p in sharp["prices"].items()}) if sharp else {}
+    sharp, sharp_probs, fitted = _sharp_context(req.match_key)
+    implied_probs = markets(fitted[1]) if fitted else {}
     already = _staked_on(req)
     st = Settings(alpha=alpha, **req.settings.model_dump())
-    selections = evaluate(probs, odds, st, already_staked=already, sharp=sharp_probs)
+    selections = evaluate(probs, odds, st, already_staked=already, sharp=sharp_probs, implied=implied_probs)
     # Previous visit's prices are shown as hints, so read them before storing.
     last_odds: dict = {}
     try:
@@ -347,7 +343,75 @@ def evaluate_match(req: EvaluateIn) -> dict:
             "books": sorted({sharp_odds.BOOK_NAMES.get(p["book"], p["book"]) for p in sharp["prices"].values()}),
             "odds": {m: p["odds"] for m, p in sharp["prices"].items()},
             "probabilities": sharp_probs,
+            "implied": None if not fitted else {"xg": list(fitted[0]), "probabilities": implied_probs},
         },
+    }
+
+
+def _sharp_context(match_key: str | None):
+    """(stored sharp prices or None, their de-margined probabilities, the
+    implied (goals, score grid) or None). Never raises."""
+    try:
+        sharp = history.sharp_for(match_key)
+    except Exception as exc:  # history must never break pricing
+        log.warning("could not read sharp prices: %s", exc)
+        return None, {}, None
+    if not sharp:
+        return None, {}, None
+    prices = {m: p["odds"] for m, p in sharp["prices"].items()}
+    try:
+        fitted = implied.grid(prices)
+    except Exception as exc:
+        log.warning("could not fit implied goals: %s", exc)
+        fitted = None
+    return sharp, market_probabilities(prices), fitted
+
+
+class ComboIn(BaseModel):
+    dataset: str = "INTL"
+    home: str
+    away: str
+    neutral: bool = False
+    legs: list[str] = Field(min_length=2, max_length=6)
+    odds: float = Field(gt=1)
+    settings: SettingsIn = SettingsIn()
+    match_key: str | None = None
+
+
+@app.post("/api/combo")
+def price_combo(req: ComboIn) -> dict:
+    """A Bet Builder bet (several legs on one match, all must win): its fair
+    chance from the score grid implied by Pinnacle's prices when stored, else
+    from the model, and the usual edge and stake."""
+    if len(set(req.legs)) < 2:
+        raise HTTPException(400, "Pick at least two different legs")
+    m = get_model(req.dataset)
+    try:
+        model_grid = m.score_matrix(req.home, req.away, req.neutral)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    try:
+        p_model = combo_probability(model_grid, req.legs)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    sharp, _, fitted = _sharp_context(req.match_key)
+    p_fair = combo_probability(fitted[1], req.legs) if fitted else None
+    if (p_fair if p_fair is not None else p_model) <= 1e-9:
+        raise HTTPException(400, "These legs can't all win together")
+    name = COMBO_SEP.join(req.legs)
+    competition = (history.match(req.match_key) or {}).get("competition") if req.match_key else None
+    try:
+        alpha, _ = tuning.alpha_for(history.tuned(), competition)
+    except Exception:
+        alpha = tuning.ALPHA_DEFAULT
+    st = Settings(alpha=alpha, **req.settings.model_dump())
+    (sel,) = evaluate({name: p_model}, {name: req.odds}, st, already_staked=_staked_on(req),
+                      implied=None if p_fair is None else {name: p_fair})
+    singles = markets(fitted[1]) if fitted else markets(model_grid)
+    return {
+        "selection": sel.to_dict(),
+        "independent": float(np.prod([singles[leg] for leg in req.legs])),
+        "fetched_at": sharp["fetched_at"] if sharp else None,
     }
 
 
