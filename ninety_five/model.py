@@ -288,6 +288,32 @@ def combo_probability(m: np.ndarray, legs: list[str]) -> float:
     return float(m[mask].sum())
 
 
+TOGETHER = 1.25  # all-lose this many times likelier than for unrelated bets
+
+
+def overlap(m: np.ndarray, bets: list[str]) -> dict:
+    """How much several bets on one match win and lose together: the chance
+    they all lose, against the chance if they were unrelated. `together` when
+    the shared scorelines make losing them all clearly likelier."""
+    none_win = np.ones(m.shape, dtype=bool)
+    independent = 1.0
+    for b in bets:
+        mask = combo_mask(b, m.shape)
+        none_win &= ~mask
+        independent *= 1 - float(m[mask].sum())
+    p_all_lose = float(m[none_win].sum())
+    return {"markets": list(bets), "p_all_lose": p_all_lose, "p_all_lose_independent": independent,
+            "together": len(bets) >= 2 and p_all_lose > TOGETHER * independent}
+
+
+def combo_mask(market: str, shape: tuple[int, int]) -> np.ndarray:
+    """market_mask for a single market or a Bet Builder combination."""
+    mask = np.ones(shape, dtype=bool)
+    for leg in market.split(COMBO_SEP):
+        mask &= market_mask(leg, shape)
+    return mask
+
+
 def settle(market: str, hg: int, ag: int) -> bool | None:
     """True if `market` wins for final score hg-ag, False if it loses."""
     if COMBO_SEP in market:

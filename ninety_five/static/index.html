@@ -377,7 +377,7 @@ function builderOut(b) {
   return `<div class="bbres ${s.recommended ? (s.caution ? "caution" : "rec") : ""}">
     <b>${esc(s.market)}</b> @ ${num(s.odds)} · chance ${pct(s.p_blend)} · fair odds <b>${num(s.fair_odds)}</b> ·
     edge <span class="${s.ev >= 0 ? "pos" : "neg"}">${s.ev >= 0 ? "+" : ""}${pct(s.ev)}</span>
-    ${s.recommended ? (s.caution ? ` · <span class="gap ${s.caution}">check the price</span>` : " · worth betting") : ""} ${log}
+    ${s.recommended ? (s.caution ? ` · <span class="gap ${s.caution}">${s.goals_from_1x2 && s.ev < 0.10 ? "goals guessed from 1X2 only" : "check the price"}</span>` : " · worth betting") : ""} ${log}
     <div class="muted">From ${src}. As separate bets multiplied: ${num(1 / r.independent)}. Worth betting from ${num((1 + +$("minedge").value / 100) * s.fair_odds)}.</div></div>`;
 }
 
@@ -723,7 +723,9 @@ function markHits() {
     const caution = same && s.recommended && !!s.caution;  // worth it on paper, but the market disagrees a lot
     el.classList.toggle("hit", hit && !caution);
     el.classList.toggle("caution", caution);
-    el.title = !caution ? "" : s.basis === "sharp" || s.basis === "implied"
+    el.title = !caution ? "" : s.goals_from_1x2 && s.ev < 0.10
+      ? "Goals estimated from Pinnacle's 1X2 only (no goals line): unreliable, stake halved"
+      : s.basis === "sharp" || s.basis === "implied"
       ? `Pays ${pct(s.ev)} more than Pinnacle's fair price: check the price, stake cut`
       : `Model ${pct(s.p_model)} vs market ${pct(s.p_market)}: big disagreement, stake cut`;
   });
@@ -770,9 +772,13 @@ function renderResult(r) {
     const o = r.sharp.odds, line = ["1", "X", "2"].every(k => o[k]) ? `1 ${num(o["1"])} · X ${num(o.X)} · 2 ${num(o["2"])}` : "";
     notes.push(`Judged against ${r.sharp.books.join(" / ")}${line ? ` (${line})` : ""}, fetched ${hhmm(r.sharp.fetched_at)}: a bet is suggested only when Danske Spil pays more than that fair price. The model is shown for comparison.`);
     if (r.sharp.implied) notes.push(`Markets Pinnacle doesn't price (BTTS, most goal lines) are estimated from the goals its prices imply: ${num(r.sharp.implied.xg[0])} – ${num(r.sharp.implied.xg[1])}. Marked P* in the table.`);
+    if (r.sharp.goals_from_1x2 && r.selections.some(s => s.goals_from_1x2))
+      notes.push("Pinnacle gave no goals line for this match, so total goals are guessed from its 1X2 alone, which says little about them. Goal bets (marked “1X2 only”) are unreliable here: their stakes are halved. Compare with Danske Spil's own over/under prices before betting.");
     if (r.selections.some(s => s.basis !== "sharp" && s.basis !== "implied")) notes.push("Markets without a sharp price use the model blend as before.");
   } else if (open && open.fixture) notes.push("No sharp price for this match (league not covered, or not fetched yet): using the model blend.");
-  if (r.selections.some(s => s.recommended && s.caution && (s.basis === "sharp" || s.basis === "implied")))
+  if (r.overlap && r.overlap.together)
+    notes.push(`These ${r.overlap.markets.length} suggested bets (${r.overlap.markets.join(", ")}) mostly win and lose together: all of them lose ${pct(r.overlap.p_all_lose)} of the time, against ${pct(r.overlap.p_all_lose_independent)} if they were unrelated. It's really one bet on the same scorelines: consider just the best one.`);
+  if (r.selections.some(s => s.recommended && s.caution && (s.basis === "sharp" || s.basis === "implied") && !(s.goals_from_1x2 && s.ev < 0.10)))
     notes.push("Red boxes: Danske Spil pays far more than Pinnacle. That's usually a stale or mistyped price, or news since Pinnacle's price was fetched, so check before betting. Stakes are cut: half from a 10% edge, a quarter from 20%.");
   if (r.selections.some(s => s.recommended && s.caution && s.basis !== "sharp" && s.basis !== "implied"))
     notes.push(`Red boxes: the model rates these far above the market. The market usually knows something the model doesn't (injuries, line-ups, form), so their stakes are cut: half from ${+$("gapwarn").value} points apart, a quarter from ${+$("gapwarn").value + 10}.`);
@@ -780,7 +786,7 @@ function renderResult(r) {
   const sel = r.selections.length ? `<div class="scroll"><table>
       <tr><th>Selection</th><th>Odds</th><th>Model</th><th>Danske Spil (no margin)</th><th>Pinnacle (no margin)</th><th title="The probability the edge is computed from: Pinnacle's when known, else the model blend">Used</th><th>Fair odds</th><th>EV</th><th>Stake</th><th></th></tr>
       ${r.selections.map((s, i) => `<tr class="${s.recommended ? "rec" : ""}${s.recommended && s.caution ? " caution" : ""}">
-        <td>${esc(s.market)}${s.recommended && s.caution ? `${s.basis === "sharp" || s.basis === "implied" ? `<span class="gap ${s.caution}" title="Edge over Pinnacle's fair price">+${Math.round(s.ev * 100)}% vs Pinnacle</span>` : `<span class="gap ${s.caution}" title="Model minus market">+${Math.round(s.gap * 100)} pts</span>`}` : ""}</td><td>${num(s.odds)}</td><td>${pct(s.p_model)}</td><td>${pct(s.p_market)}</td>
+        <td>${esc(s.market)}${s.recommended && s.caution ? `${s.goals_from_1x2 && s.ev < 0.10 ? `<span class="gap amber" title="Goals estimated from Pinnacle's 1X2 only: stake halved">1X2 only</span>` : s.basis === "sharp" || s.basis === "implied" ? `<span class="gap ${s.caution}" title="Edge over Pinnacle's fair price">+${Math.round(s.ev * 100)}% vs Pinnacle</span>` : `<span class="gap ${s.caution}" title="Model minus market">+${Math.round(s.gap * 100)} pts</span>`}` : ""}</td><td>${num(s.odds)}</td><td>${pct(s.p_model)}</td><td>${pct(s.p_market)}</td>
         <td${s.basis === "implied" ? ' title="Estimated from the goals implied by Pinnacle\'s 1X2 and over/under prices"' : ""}>${s.p_sharp == null ? "–" : pct(s.p_sharp) + (s.basis === "implied" ? "*" : "")}</td><td>${pct(s.p_blend)}${s.basis === "sharp" ? ` <span class="muted">P</span>` : s.basis === "implied" ? ` <span class="muted">P*</span>` : ""}</td><td>${num(s.fair_odds)}</td>
         <td class="${s.ev >= 0 ? "pos" : "neg"}">${pct(s.ev)}</td>
         <td>${!s.recommended ? "–" : s.capped && s.stake === 0 ? `<span class="muted">limit</span>` : num(s.stake, 0) + " kr"}</td>

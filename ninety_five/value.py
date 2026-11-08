@@ -44,6 +44,8 @@ Method
    SHARP_RED (the model-gap caution of point 6 doesn't apply). Markets the
    sharp book doesn't quote (BTTS, most goal lines) are priced from the
    expected goals that reproduce its 1X2 and over/under prices (implied.py).
+   When it gave no goals line at all, those goals rest on the 1X2 alone, so
+   goal bets priced from them are halved at least (goals_from_1x2).
 """
 
 from __future__ import annotations
@@ -89,6 +91,7 @@ class Selection:
     capped: bool = False         # stake cut by the match limit
     p_sharp: float | None = None  # de-margined sharp-book probability, when known
     basis: str = "blend"         # "sharp" (p = p_sharp) | "implied" (p from sharp-implied goals) | "blend" | "model"
+    goals_from_1x2: bool = False  # implied goals market, but the sharp book gave no goals line
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -119,6 +122,15 @@ def market_probabilities(odds: dict[str, float]) -> dict[str, float]:
     return out
 
 
+RESULT_MARKETS = {"1", "X", "2", "1X", "12", "X2"}
+
+
+def is_goals_market(name: str) -> bool:
+    """True when a market (or any leg of a Bet Builder combination) depends on
+    the number of goals, not just on who wins."""
+    return any(leg not in RESULT_MARKETS for leg in name.split(" + "))
+
+
 RED_STEP = 0.10  # red caution starts this far above gap_warn
 
 
@@ -141,11 +153,13 @@ def sharp_caution(ev: float) -> tuple[str, float]:
 
 def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings,
              already_staked: float = 0.0, sharp: dict[str, float] | None = None,
-             implied: dict[str, float] | None = None) -> list[Selection]:
+             implied: dict[str, float] | None = None, goals_from_1x2: bool = False) -> list[Selection]:
     """`already_staked`: kroner already bet on this match (open bets).
     `sharp`: de-margined sharp-book probabilities by market (market_probabilities of its prices).
     `implied`: probabilities from the goals implied by the sharp prices (implied.py),
-    used for markets the sharp book doesn't quote (BTTS, other goal lines)."""
+    used for markets the sharp book doesn't quote (BTTS, other goal lines).
+    `goals_from_1x2`: the implied goals were fitted to the 1X2 alone (no goals
+    line), so goal markets priced from them get at least an amber caution."""
     sharp, implied = sharp or {}, implied or {}
     market = market_probabilities(odds)
     room = max(s.match_limit_pct * s.bankroll - already_staked, 0.0)
@@ -169,6 +183,9 @@ def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings,
         kelly = max(ev / (o - 1), 0.0)
         gap = None if pk is None else pm - pk
         caution, mult = sharp_caution(ev) if basis in ("sharp", "implied") else caution_for(gap, s)
+        weak = basis == "implied" and goals_from_1x2 and is_goals_market(name)
+        if weak and mult > 0.5:
+            caution, mult = "amber", 0.5
         stake_pct = min(s.kelly_fraction * kelly * mult, s.max_stake_pct)
         rec = ev >= s.min_edge
         # Whole kroner: that's how stakes are placed. A recommended bet never
@@ -194,6 +211,7 @@ def evaluate(model_probs: dict[str, float], odds: dict[str, float], s: Settings,
                 capped=bool(capped),
                 p_sharp=None if ps is None else float(ps),
                 basis=basis,
+                goals_from_1x2=weak,
             )
         )
     return sorted(rows, key=lambda r: r.ev, reverse=True)

@@ -102,7 +102,7 @@ def _get(path: str, params: dict) -> tuple[object, dict]:
 
 # ----------------------------------------------------------------- parsing
 def _prices(bookmaker: dict, home: str, away: str) -> dict[str, float]:
-    """One bookmaker's prices in the app's market names (1/X/2, Over/Under x.5)."""
+    """One bookmaker's prices in the app's market names (1/X/2, Over/Under x)."""
     out: dict[str, float] = {}
     for m in bookmaker.get("markets", []):
         outcomes = m.get("outcomes", [])
@@ -119,8 +119,9 @@ def _prices(bookmaker: dict, home: str, away: str) -> dict[str, float]:
                     continue
                 lines.setdefault(float(point), {})[o["name"]] = float(o["price"])
             for point, sides in lines.items():
-                # Quarter lines (2.25, 2.75) settle differently: only whole halves.
-                if len(sides) == 2 and (point * 2) % 2 == 1:
+                # Half, whole and quarter lines (2.75 = half on 2.5, half on 3)
+                # are all kept: implied.py fits the goals to any of them.
+                if len(sides) == 2 and (point * 4) % 1 == 0:
                     for side, price in sides.items():
                         out[f"{side} {point:g}"] = price
     return out

@@ -32,9 +32,9 @@ def test_prices_take_each_market_from_the_first_sharp_book():
     p = sharp_odds.sharp_prices(_event())
     assert p["1"] == {"odds": 4.09, "book": "pinnacle"}
     assert p["X"] == {"odds": 3.75, "book": "pinnacle"} and p["2"] == {"odds": 1.92, "book": "pinnacle"}
-    # Pinnacle quotes only a quarter line (2.75), so 2.5 comes from the exchange.
+    # Pinnacle quotes only a quarter line (2.75): kept for the goals fit; 2.5 comes from the exchange.
     assert p["Over 2.5"] == {"odds": 1.8, "book": "betfair_ex_eu"}
-    assert "Over 2.75" not in p
+    assert p["Over 2.75"] == {"odds": 1.95, "book": "pinnacle"} and p["Under 2.75"]["odds"] == 1.9
 
 
 def test_incomplete_h2h_is_ignored():

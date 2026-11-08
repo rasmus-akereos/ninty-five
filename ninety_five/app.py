@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from . import fixtures, implied, import_odds, scheduler, service, sharp_odds, stats, track, tuning, uefa, validate
-from .model import COMBO_SEP, DixonColes, combo_probability, markets
+from .model import COMBO_SEP, DixonColes, combo_probability, markets, overlap
 from .history import HistoryStore
 from .store import BetStore, DuplicateBet
 from .value import Settings, evaluate, market_probabilities, overround
@@ -338,7 +338,9 @@ def evaluate_match(req: EvaluateIn) -> dict:
     implied_probs = markets(fitted[1]) if fitted else {}
     already = _staked_on(req)
     st = Settings(alpha=alpha, **req.settings.model_dump())
-    selections = evaluate(probs, odds, st, already_staked=already, sharp=sharp_probs, implied=implied_probs)
+    weak = bool(sharp) and not implied.has_goal_line({m: p["odds"] for m, p in sharp["prices"].items()})
+    selections = evaluate(probs, odds, st, already_staked=already, sharp=sharp_probs, implied=implied_probs,
+                          goals_from_1x2=weak)
     # Previous visit's prices are shown as hints, so read them before storing.
     last_odds: dict = {}
     try:
@@ -374,8 +376,21 @@ def evaluate_match(req: EvaluateIn) -> dict:
             "odds": {m: p["odds"] for m, p in sharp["prices"].items()},
             "probabilities": sharp_probs,
             "implied": None if not fitted else {"xg": list(fitted[0]), "probabilities": implied_probs},
+            "goals_from_1x2": weak,
         },
+        "overlap": _overlap(fitted[1] if fitted else sm, selections),
     }
+
+
+def _overlap(grid, selections) -> dict | None:
+    """Several suggested bets on one match that mostly win and lose together."""
+    bets = [s.market for s in selections if s.recommended and s.stake > 0]
+    if len(bets) < 2:
+        return None
+    try:
+        return overlap(grid, bets)
+    except ValueError:  # a market the score grid can't settle
+        return None
 
 
 def _sharp_context(match_key: str | None):
@@ -426,6 +441,7 @@ def price_combo(req: ComboIn) -> dict:
         raise HTTPException(400, str(exc)) from exc
     sharp, _, fitted = _sharp_context(req.match_key)
     p_fair = combo_probability(fitted[1], req.legs) if fitted else None
+    weak = bool(sharp) and not implied.has_goal_line({m: p["odds"] for m, p in sharp["prices"].items()})
     if (p_fair if p_fair is not None else p_model) <= 1e-9:
         raise HTTPException(400, "These legs can't all win together")
     name = COMBO_SEP.join(req.legs)
@@ -436,7 +452,7 @@ def price_combo(req: ComboIn) -> dict:
         alpha = tuning.ALPHA_DEFAULT
     st = Settings(alpha=alpha, **req.settings.model_dump())
     (sel,) = evaluate({name: p_model}, {name: req.odds}, st, already_staked=_staked_on(req),
-                      implied=None if p_fair is None else {name: p_fair})
+                      implied=None if p_fair is None else {name: p_fair}, goals_from_1x2=weak)
     singles = markets(fitted[1]) if fitted else markets(model_grid)
     return {
         "selection": sel.to_dict(),

@@ -416,3 +416,33 @@ def test_stats_soft_counts_only_the_last_price_per_market(client):
         app_mod.history.record_odds("fd:1", "EUROPE", "A", "B", [{"market": "1", "odds": o}], f"2026-11-03T{t}:00.000+00:00")
     r = client.get("/api/stats/soft").json()
     assert r["n"] == 1 and r["top"][0]["odds"] == 2.05
+
+
+def test_evaluate_flags_goal_markets_priced_from_1x2_only_and_overlapping_bets(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    app_mod.history.save_sharp("fd:1", "2026-11-03T09:00:00+00:00", {
+        "1": {"odds": 3.12, "book": "pinnacle"}, "X": {"odds": 3.22, "book": "pinnacle"},
+        "2": {"odds": 2.5, "book": "pinnacle"}})
+    body = {"dataset": "EUROPE", "home": "A", "away": "B", "match_key": "fd:1",
+            "odds": {"Under 2.5": 2.2, "Under 1.5": 4.5, "BTTS No": 2.4, "1": 2.0}}
+    r = client.post("/api/evaluate", json=body).json()
+    sel = {s["market"]: s for s in r["selections"]}
+    assert r["sharp"]["goals_from_1x2"] is True
+    assert sel["Under 2.5"]["goals_from_1x2"] and sel["Under 2.5"]["caution"]
+    assert not sel["1"]["goals_from_1x2"]
+    o = r["overlap"]
+    assert set(o["markets"]) == {s["market"] for s in r["selections"] if s["recommended"] and s["stake"] > 0}
+    assert len(o["markets"]) >= 2 and o["together"] and o["p_all_lose"] > o["p_all_lose_independent"]
+
+
+def test_evaluate_quarter_line_counts_as_a_goals_line(client):
+    app_mod.history.save_board([_row()], "2026-11-03T08:00:00+00:00")
+    app_mod.history.save_sharp("fd:1", "2026-11-03T09:00:00+00:00", {
+        "1": {"odds": 3.12, "book": "pinnacle"}, "X": {"odds": 3.22, "book": "pinnacle"},
+        "2": {"odds": 2.5, "book": "pinnacle"}, "Over 2.75": {"odds": 2.0, "book": "pinnacle"},
+        "Under 2.75": {"odds": 1.88, "book": "pinnacle"}})
+    body = {"dataset": "EUROPE", "home": "A", "away": "B", "match_key": "fd:1", "odds": {"Under 2.5": 1.77}}
+    r = client.post("/api/evaluate", json=body).json()
+    assert r["sharp"]["goals_from_1x2"] is False
+    assert not r["selections"][0]["goals_from_1x2"]
+    assert "Over 2.75" not in r["sharp"]["probabilities"]
