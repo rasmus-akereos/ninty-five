@@ -14,7 +14,24 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
+from pathlib import Path
+import json
+
+# The last imported pages, kept so readers for new page types (NFL, NBA) can
+# be written and tested against real Danske Spil text. Local only (data/).
+IMPORT_DIR = Path(__file__).resolve().parent.parent / "data" / "imports"
+KEEP_IMPORTS = 20
+
+
+def keep_page(text: str, title: str) -> None:
+    """Save an imported page's text; only the newest KEEP_IMPORTS are kept."""
+    IMPORT_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+    (IMPORT_DIR / f"{stamp}.json").write_text(json.dumps({"title": title, "text": text}, ensure_ascii=False))
+    for old in sorted(IMPORT_DIR.glob("*.json"))[:-KEEP_IMPORTS]:
+        old.unlink()
 
 PRICE = re.compile(r"^\d+,\d+$|^\d+\.\d{2}$")
 LINE = re.compile(r"^\d+(?:[.,]5)$")

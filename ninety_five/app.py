@@ -172,6 +172,10 @@ class ImportIn(BaseModel):
 def import_page_odds(req: ImportIn) -> dict:
     """Odds read from a Danske Spil match page by the bookmark button, matched
     to a stored board match (match_key None if no single match fits)."""
+    try:
+        import_odds.keep_page(req.text, req.title)
+    except OSError as exc:  # keeping the page is a convenience, never a failure
+        log.warning("could not keep imported page: %s", exc)
     parsed = import_odds.parse_page(req.text, req.title)
     match = None
     if parsed["home"] and parsed["away"]:

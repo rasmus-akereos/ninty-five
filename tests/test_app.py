@@ -493,3 +493,13 @@ def test_us_bet_logs_settles_with_push_and_shows_pinnacle(client):
     bid = client.post("/api/bets", json={**bet, "market": "ML 2", "odds": 3.6}).json()["id"]
     d = client.get(f"/api/bets/{bid}/detail").json()
     assert d["pinnacle_logged"]["vs"] == pytest.approx(3.6 * d["pinnacle_logged"]["probabilities"]["ML 2"] - 1)
+
+
+def test_import_keeps_the_last_pages_for_building_parsers(client):
+    from ninety_five import import_odds
+    for i in range(import_odds.KEEP_IMPORTS + 3):
+        client.post("/api/import-odds", json={"text": f"page {i}", "title": f"t{i}"})
+    files = sorted(import_odds.IMPORT_DIR.glob("*.json"))
+    assert len(files) == import_odds.KEEP_IMPORTS
+    import json
+    assert json.loads(files[-1].read_text()) ["text"] == f"page {import_odds.KEEP_IMPORTS + 2}"

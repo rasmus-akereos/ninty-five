@@ -40,3 +40,11 @@ def offline_sharp_odds(monkeypatch):
         raise AssertionError("test tried to call The Odds API")
 
     monkeypatch.setattr(sharp_odds, "_get", no_network)
+
+
+@pytest.fixture(autouse=True)
+def imports_in_tmp(tmp_path, monkeypatch):
+    """Imported Danske Spil pages are kept in a temporary folder in tests."""
+    from ninety_five import import_odds
+
+    monkeypatch.setattr(import_odds, "IMPORT_DIR", tmp_path / "imports")
