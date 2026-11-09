@@ -4,6 +4,8 @@ has an edge, so every bet placed should be logged here."""
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -99,10 +101,18 @@ class BetStore:
                 if col not in have:
                     c.execute(f"ALTER TABLE bets ADD COLUMN {col} {typ}")
 
-    def _conn(self) -> sqlite3.Connection:
+    @contextmanager
+    def _conn(self) -> Iterator[sqlite3.Connection]:
+        """A connection for one `with` block: committed (or rolled back on
+        error) and closed at the end. Python 3.14 leaves an unclosed
+        connection open until the garbage collector runs."""
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def add(self, bet: dict) -> int:
         fields = ["dataset", "home", "away", "market", "odds", "stake", "p_model", "p_blend", "ev", "match_id", "kickoff", "match_key"]

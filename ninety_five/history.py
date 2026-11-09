@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pandas as pd
@@ -138,10 +140,18 @@ class HistoryStore:
         with self._conn() as c:
             c.executescript(SCHEMA)
 
-    def _conn(self) -> sqlite3.Connection:
+    @contextmanager
+    def _conn(self) -> Iterator[sqlite3.Connection]:
+        """A connection for one `with` block: committed (or rolled back on
+        error) and closed at the end. Python 3.14 leaves an unclosed
+        connection open until the garbage collector runs."""
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     # ------------------------------------------------------------- board
     def save_board(self, rows: list[dict], fetched_at: str) -> int:
@@ -587,7 +597,8 @@ class HistoryStore:
                             "VALUES (?, ?, ?, ?, ?, 'reverted', ?)",
                             (now, row["setting"], row["scope"], row["new"], row["old"], f"undid change #{log_id}"))
             new_id = cur.lastrowid
-        return dict(self._conn().execute("SELECT * FROM tuning_log WHERE id = ?", (new_id,)).fetchone())
+        with self._conn() as c:
+            return dict(c.execute("SELECT * FROM tuning_log WHERE id = ?", (new_id,)).fetchone())
 
     def blocked(self, setting: str, scope: str, now: pd.Timestamp) -> bool:
         last = self.last_tuning(setting, scope, action="reverted")
