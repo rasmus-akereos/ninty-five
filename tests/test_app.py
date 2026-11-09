@@ -446,3 +446,50 @@ def test_evaluate_quarter_line_counts_as_a_goals_line(client):
     assert r["sharp"]["goals_from_1x2"] is False
     assert not r["selections"][0]["goals_from_1x2"]
     assert "Over 2.75" not in r["sharp"]["probabilities"]
+
+
+# ------------------------------------------------------------- NFL / NBA
+def _us_game():
+    app_mod.history.save_us_games([{"key": "us:ev1", "sport": "NFL", "home": "Detroit Lions", "away": "Chicago Bears",
+                                    "kickoff": "2099-11-09T18:00:00+00:00"}], "2026-11-09T07:00:00+00:00")
+    app_mod.history.save_sharp("us:ev1", "2026-11-09T07:00:00+00:00", {
+        "ML 1": {"odds": 1.4, "book": "pinnacle"}, "ML 2": {"odds": 3.1, "book": "pinnacle"},
+        "Spread 1 -7.5": {"odds": 1.91, "book": "pinnacle"}, "Spread 2 +7.5": {"odds": 1.95, "book": "pinnacle"},
+        "Over 47": {"odds": 1.9, "book": "pinnacle"}, "Under 47": {"odds": 1.95, "book": "pinnacle"}})
+
+
+def test_us_games_lists_games_with_pinnacle_fair_prices(client):
+    _us_game()
+    r = client.get("/api/us/games", params={"sport": "NFL"}).json()
+    (g,) = r["games"]
+    assert g["key"] == "us:ev1" and g["prices"]["ML 1"] == 1.4
+    assert g["fair"]["ML 1"] + g["fair"]["ML 2"] == pytest.approx(1)
+    assert "credits" in r
+    assert client.get("/api/us/games", params={"sport": "Cricket"}).status_code == 400
+
+
+def test_us_evaluate_judges_typed_prices_against_pinnacle_and_records_them(client):
+    _us_game()
+    body = {"key": "us:ev1", "odds": {"ML 2": 3.6, "Spread 1 -7.5": 1.8, "Over 48": 1.9}}
+    r = client.post("/api/us/evaluate", json=body).json()
+    sel = {s["market"]: s for s in r["selections"]}
+    assert set(sel) == {"ML 2", "Spread 1 -7.5"}  # no Pinnacle price for Over 48: not judged
+    assert sel["ML 2"]["basis"] == "sharp" and sel["ML 2"]["recommended"]
+    assert sel["ML 2"]["ev"] == pytest.approx(3.6 * r["sharp"]["probabilities"]["ML 2"] - 1)
+    assert not sel["Spread 1 -7.5"]["recommended"]
+    assert r["unmatched"] == ["Over 48"]
+    soft = client.get("/api/stats/soft").json()
+    assert soft["n"] == 2 and {g["label"] for g in soft["by_league"]} == {"NFL"}
+    assert client.post("/api/us/evaluate", json={**body, "key": "us:nope"}).status_code == 404
+
+
+def test_us_bet_logs_settles_with_push_and_shows_pinnacle(client):
+    _us_game()
+    bet = {"dataset": "NFL", "home": "Detroit Lions", "away": "Chicago Bears", "market": "Spread 1 -7",
+           "odds": 1.95, "stake": 10, "match_key": "us:ev1", "kickoff": "2099-11-09T18:00:00+00:00"}
+    bid = client.post("/api/bets", json=bet).json()["id"]
+    s = client.post(f"/api/bets/{bid}/settle", json={"home_goals": 24, "away_goals": 17}).json()
+    assert s["status"] == "void" and s["pnl"] == 0
+    bid = client.post("/api/bets", json={**bet, "market": "ML 2", "odds": 3.6}).json()["id"]
+    d = client.get(f"/api/bets/{bid}/detail").json()
+    assert d["pinnacle_logged"]["vs"] == pytest.approx(3.6 * d["pinnacle_logged"]["probabilities"]["ML 2"] - 1)

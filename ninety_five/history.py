@@ -105,6 +105,14 @@ CREATE TABLE IF NOT EXISTS sharp_prices (  -- sharp bookmaker prices (sharp_odds
     book TEXT NOT NULL             -- pinnacle | betfair_ex_eu | matchbook
 );
 CREATE INDEX IF NOT EXISTS sharp_match ON sharp_prices(match_key, fetched_at);
+CREATE TABLE IF NOT EXISTS us_games (  -- NFL / NBA games from The Odds API (us_sports.py)
+    key TEXT PRIMARY KEY,          -- us:<Odds API event id>
+    sport TEXT NOT NULL,           -- NFL | NBA
+    kickoff TEXT NOT NULL,         -- ISO UTC
+    home TEXT NOT NULL,
+    away TEXT NOT NULL,
+    last_seen TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS odds_api_calls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at TEXT NOT NULL,
@@ -385,9 +393,34 @@ class HistoryStore:
                       (hg, ag, status, key))
 
     def competitions(self) -> dict[str, str]:
-        """match_key -> competition for every board match seen."""
+        """match_key -> competition for every board match and NFL / NBA game seen."""
         with self._conn() as c:
-            return {r["key"]: r["competition"] for r in c.execute("SELECT key, competition FROM matches")}
+            out = {r["key"]: r["sport"] for r in c.execute("SELECT key, sport FROM us_games")}
+            out.update({r["key"]: r["competition"] for r in c.execute("SELECT key, competition FROM matches")})
+            return out
+
+    # ---------------------------------------------------- NFL / NBA games
+    US_RECENT = pd.Timedelta(hours=4)  # games stay listed this long after the start
+
+    def save_us_games(self, games: list[dict], seen_at: str) -> None:
+        with self._conn() as c:
+            c.executemany(
+                """INSERT INTO us_games (key, sport, kickoff, home, away, last_seen) VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(key) DO UPDATE SET kickoff = excluded.kickoff, home = excluded.home,
+                   away = excluded.away, last_seen = excluded.last_seen""",
+                [(g["key"], g["sport"], g["kickoff"], g["home"], g["away"], seen_at) for g in games])
+
+    def us_games(self, sport: str, now: pd.Timestamp) -> list[dict]:
+        """A sport's games that start later or started within US_RECENT, soonest first."""
+        with self._conn() as c:
+            rows = [dict(r) for r in c.execute("SELECT * FROM us_games WHERE sport = ?", (sport,))]
+        rows = [r for r in rows if pd.Timestamp(r["kickoff"]) >= now - self.US_RECENT]
+        return sorted(rows, key=lambda r: pd.Timestamp(r["kickoff"]))
+
+    def us_game(self, key: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM us_games WHERE key = ?", (key,)).fetchone()
+        return dict(row) if row else None
 
     # ------------------------------------------------------ sharp prices
     def save_sharp(self, match_key: str, fetched_at: str, prices: dict[str, dict]) -> None:
@@ -441,8 +474,10 @@ class HistoryStore:
             for r in c.execute("SELECT match_key, fetched_at, market, odds FROM sharp_prices"):
                 fetches.setdefault(r["match_key"], {}).setdefault(r["fetched_at"], {})[r["market"]] = r["odds"]
             entries = c.execute(
-                """SELECT o.match_key, o.market, o.odds, o.entered_at, COALESCE(m.competition, 'Other') AS competition
+                """SELECT o.match_key, o.market, o.odds, o.entered_at,
+                          COALESCE(m.competition, u.sport, 'Other') AS competition
                    FROM odds_entries o LEFT JOIN matches m ON m.key = o.match_key
+                   LEFT JOIN us_games u ON u.key = o.match_key
                    WHERE o.match_key IS NOT NULL ORDER BY o.id""").fetchall()
         out = []
         for e in entries:

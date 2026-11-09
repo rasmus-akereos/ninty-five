@@ -340,7 +340,28 @@ def settle(market: str, hg: int, ag: int) -> bool | None:
         return total > float(market.split()[1])
     if market.startswith("Under "):
         return total < float(market.split()[1])
+    # NFL / NBA (us_sports.py): moneyline and point spread on the final score.
+    if market == "ML 1":
+        return hg > ag
+    if market == "ML 2":
+        return hg < ag
+    if market.startswith("Spread "):
+        _, side, line = market.split()
+        return hg + float(line) > ag if side == "1" else ag + float(line) > hg
     return None
+
+
+def is_push(market: str, hg: int, ag: int) -> bool:
+    """True when the stake comes back: a whole-number spread or total landing
+    exactly on the line, or a tied moneyline (NFL)."""
+    if market in ("ML 1", "ML 2"):
+        return hg == ag
+    if market.startswith("Spread "):
+        _, side, line = market.split()
+        return (hg + float(line) == ag) if side == "1" else (ag + float(line) == hg)
+    if market.startswith(("Over ", "Under ")) and COMBO_SEP not in market:
+        return hg + ag == float(market.split()[1])
+    return False
 
 
 def match_losses_1x2(model: DixonColes, df: pd.DataFrame) -> np.ndarray:

@@ -105,7 +105,14 @@ tr.rec.caution td { background: color-mix(in srgb, var(--bad) 14%, transparent);
 .kpi span { color: var(--muted); font-size: 12px; }
 
 /* statistics */
-body[data-tab="stats"] .chips-bar { display: none; }
+body[data-tab="stats"] .chips-bar, body[data-tab="us"] .chips-bar { display: none; }
+.usbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 10px; }
+.usgame { border: 1px solid var(--line, #8883); border-radius: 10px; margin: 8px 0; overflow: hidden; }
+.usgame > .ushead { display: flex; gap: 10px; align-items: baseline; padding: 10px 12px; cursor: pointer; flex-wrap: wrap; }
+.usgame > .ushead:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.usgame .usbody { padding: 0 12px 12px; }
+.usgame input.usodds { width: 70px; }
+.usgame tr.rec td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .subtabs { flex-wrap: wrap; }
 .faded { opacity: .45; }
 .chart-box { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px 4px; margin-bottom: 12px; }
@@ -229,6 +236,7 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
     <nav class="tabs" role="tablist">
       <button class="tab" role="tab" data-tab="matches">Matches</button>
       <button class="tab" role="tab" data-tab="bets">Bet log <span class="n" id="bets-count"></span></button>
+      <button class="tab" role="tab" data-tab="us">NFL / NBA</button>
       <button class="tab" role="tab" data-tab="stats">Statistics</button>
     </nav>
     <button class="icon-btn primary" id="loadboard" title="Fetch the latest fixtures and results"><span class="spin" aria-hidden="true">↻</span> <span class="label">Refresh</span></button>
@@ -273,6 +281,20 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
     <div class="scroll"><table id="bets"></table></div>
   </section>
 
+  </div>
+
+  <div id="tab-us" class="tabpane" hidden>
+  <section>
+    <div class="board-head"><h2>NFL / NBA</h2>
+      <div class="chips subtabs" role="tablist">
+        <button class="chip" data-us="NFL">NFL</button>
+        <button class="chip" data-us="NBA">NBA</button>
+      </div>
+    </div>
+    <div class="usbar"><button class="small" id="us-fetch">Get Pinnacle prices</button><span class="muted" id="us-info"></span></div>
+    <div id="us-msg"></div>
+    <div id="us-games"></div>
+  </section>
   </div>
 
   <div id="tab-stats" class="tabpane" hidden>
@@ -335,7 +357,15 @@ const placedBadge = f => {
   const mine = openBetsFor({ key: f.key, dataset: f.dataset || "EUROPE", home: f.home, away: f.away });
   return mine.length ? `<span class="badge placed" title="${esc(mine.map(betLine).join(", "))}">bet placed</span>` : "";
 };
-const betLine = b => `${b.market} · ${num(b.stake, 0)} kr @ ${num(b.odds)}`;
+const betLine = b => `${marketLabel(b.market, b.home, b.away)} · ${num(b.stake, 0)} kr @ ${num(b.odds)}`;
+// NFL / NBA markets read better with team names: "ML 1" -> "Detroit Lions win".
+function marketLabel(m, home, away) {
+  if (m === "ML 1") return `${home} win`;
+  if (m === "ML 2") return `${away} win`;
+  const sp = /^Spread ([12]) (\S+)$/.exec(m);
+  if (sp) return `${sp[1] === "1" ? home : away} ${sp[2]}`;
+  return m;
+}
 // The open bets on the folded-open match, with what each pays if it wins.
 // --------------------------------------------------------- Bet Builder
 // One Danske Spil bet made of several legs on the same match ("Sunderland wins
@@ -1021,7 +1051,7 @@ async function loadBets() {
     </details>
     <h3 class="sub">All bets</h3>` : "";
   $("bets").innerHTML = bets.length ? `<tr><th>Kick-off</th><th>Match</th><th>Selection</th><th>Odds</th><th>Stake</th><th>EV</th><th>Take Profit above</th><th>Close</th><th>Result</th><th>P/L</th><th></th></tr>` +
-    bets.map(b => `<tr class="betrow${expanded.has(b.id) ? " open" : ""}" data-bet="${b.id}" title="Click for the odds behind this bet"><td>${kickoffLabel(b.kickoff)}</td><td>${esc(b.home)} – ${esc(b.away)}</td><td>${esc(b.market)}</td><td>${num(b.odds)}</td>
+    bets.map(b => `<tr class="betrow${expanded.has(b.id) ? " open" : ""}" data-bet="${b.id}" title="Click for the odds behind this bet"><td>${kickoffLabel(b.kickoff)}</td><td>${esc(b.home)} – ${esc(b.away)}</td><td>${esc(marketLabel(b.market, b.home, b.away))}</td><td>${num(b.odds)}</td>
       <td>${num(b.stake, 0)}</td><td>${pct(b.ev)}</td><td>${b.take_profit_above == null ? "–" : num(b.take_profit_above, 0) + " kr"}</td><td>${num(b.closing_odds)}</td>
       <td>${b.status}${b.home_goals != null ? ` (${b.home_goals}-${b.away_goals})` : ""}</td>
       <td class="${(b.pnl || 0) >= 0 ? "pos" : "neg"}">${num(b.pnl, 0)}</td>
@@ -1060,13 +1090,14 @@ async function loadBetDetail(id) {
   catch (e) { cell.innerHTML = `<div class="note">${esc(e.message)}</div>`; return; }
   const b = d.bet, pl = d.pinnacle_logged, pk = d.pinnacle_kickoff;
   const fair = p => p ? num(1 / p) : "–";
-  const markets = MARKET_ORDER.filter(m => m === b.market || d.danske_spil[m] != null
-    || (pl && pl.odds[m] != null) || (pk && pk.odds[m] != null));
-  const rows = markets.map(m => `<tr class="${m === b.market ? "mine" : ""}"><td>${esc(m)}${m === b.market ? " ← your bet" : ""}</td>
+  const us = (b.match_key || "").startsWith("us:");
+  const markets = (us ? usOrder([...new Set([b.market, ...Object.keys(d.danske_spil), ...Object.keys(pl ? pl.odds : {}), ...Object.keys(pk ? pk.odds : {})])]) : MARKET_ORDER)
+    .filter(m => m === b.market || d.danske_spil[m] != null || (pl && pl.odds[m] != null) || (pk && pk.odds[m] != null));
+  const rows = markets.map(m => `<tr class="${m === b.market ? "mine" : ""}"><td>${esc(marketLabel(m, b.home, b.away))}${m === b.market ? " ← your bet" : ""}</td>
       <td>${d.danske_spil[m] != null ? num(d.danske_spil[m]) : "–"}</td><td>${fair(d.model[m])}</td>
       <td>${pl ? fair(pl.probabilities[m]) : "–"}</td><td>${pk ? fair(pk.probabilities[m]) : "–"}</td></tr>`).join("");
   const facts = [
-    ["Bet", `${esc(b.market)} @ ${num(b.odds)} · ${num(b.stake, 0)} kr · pays ${num(b.stake * b.odds, 0)} kr`],
+    ["Bet", `${esc(marketLabel(b.market, b.home, b.away))} @ ${num(b.odds)} · ${num(b.stake, 0)} kr · pays ${num(b.stake * b.odds, 0)} kr`],
     ["Logged", dayTime(b.created)], ["Kick-off", dayTime(d.kickoff)],
     ["App's chance when logged", b.p_blend == null ? "–" : `${pct(b.p_blend)} (fair odds ${fair(b.p_blend)}, model ${pct(b.p_model)})`],
     ["Expected value when logged", signedPct(b.ev)],
@@ -1279,14 +1310,135 @@ async function loadAlphaInfo() {
   } catch { /* keep the static text */ }
 }
 
+// ------------------------------------------------------------- NFL / NBA
+// No model: a Danske Spil price is judged against Pinnacle's de-margined
+// price on the same line (us_sports.py). Pinnacle's prices are fetched on
+// demand (3 credits a fetch).
+let usSport = store.get("us-sport") || "NFL";
+let usData = null, usOpen = null, usSeq = 0;
+const usTyped = {}, usResult = {}, usTimers = {};
+function usOrder(markets) {
+  const rank = m => m === "ML 1" ? 0 : m === "ML 2" ? 1 : m.startsWith("Spread 1") ? 2 : m.startsWith("Spread 2") ? 3
+    : m.startsWith("Over") ? 4 : m.startsWith("Under") ? 5 : 6;
+  return [...markets].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
+async function loadUs(fetch = false) {
+  document.querySelectorAll("[data-us]").forEach(c => c.classList.toggle("active", c.dataset.us === usSport));
+  const btn = $("us-fetch");
+  if (fetch) { btn.disabled = true; btn.textContent = "Fetching…"; }
+  try {
+    usData = await api(fetch ? `/api/us/fetch/${usSport}` : `/api/us/games?sport=${usSport}`, fetch ? { method: "POST" } : {});
+  } catch (e) {
+    $("us-msg").innerHTML = `<div class="note">${esc(e.message)}</div>`;
+    return;
+  } finally { btn.disabled = false; btn.textContent = "Get Pinnacle prices"; }
+  renderUs();
+}
+function renderUs() {
+  const d = usData, c = d.credits || {};
+  $("us-info").textContent = (d.last_fetch ? `Last fetch ${kickoffLabel(d.last_fetch)}` : "Not fetched yet")
+    + ` · a fetch costs ${d.cost} credits` + (c.remaining != null ? ` · ${c.remaining} of 500 left` : "");
+  $("us-msg").innerHTML = d.message ? `<div class="note">${esc(d.message)}</div>` : "";
+  $("us-games").innerHTML = d.games.length ? d.games.map(usGameHtml).join("")
+    : `<p class="muted">No ${esc(usSport)} games stored. Press “Get Pinnacle prices” to load the coming games with Pinnacle's prices.</p>`;
+  document.querySelectorAll("#us-games .ushead").forEach(h => h.onclick = () => {
+    usOpen = usOpen === h.dataset.key ? null : h.dataset.key; renderUs();
+  });
+  document.querySelectorAll("#us-games input.usodds").forEach(inp => inp.oninput = () => {
+    const key = inp.dataset.key;
+    (usTyped[key] = usTyped[key] || {})[inp.dataset.market] = inp.value;
+    clearTimeout(usTimers[key]); usTimers[key] = setTimeout(() => usEvaluate(key), 350);
+  });
+  if (usOpen) usFill(usOpen);
+}
+const usMine = g => openBetsFor({ key: g.key, dataset: g.sport, home: g.home, away: g.away });
+function usGameHtml(g) {
+  const mine = usMine(g);
+  const head = `<div class="ushead" data-key="${esc(g.key)}"><span class="muted">${kickoffLabel(g.kickoff)}</span>
+    <b>${esc(g.away)}</b> <span class="muted">@</span> <b>${esc(g.home)}</b>
+    ${mine.length ? `<span class="badge placed" title="${esc(mine.map(betLine).join(", "))}">bet placed</span>` : ""}</div>`;
+  if (usOpen !== g.key) return `<div class="usgame">${head}</div>`;
+  const ms = usOrder(Object.keys(g.prices));
+  const typed = usTyped[g.key] || {};
+  const rows = ms.map(m => `<tr data-row="${esc(m)}"><td>${esc(marketLabel(m, g.home, g.away))}</td><td>${num(g.prices[m])}</td>
+      <td>${g.fair[m] ? num(1 / g.fair[m]) : "–"}</td>
+      <td><input class="usodds" data-key="${esc(g.key)}" data-market="${esc(m)}" inputmode="decimal" autocomplete="off" value="${esc(typed[m] || "")}" aria-label="Danske Spil odds"></td>
+      <td data-cell="ev"></td><td data-cell="stake"></td></tr>`).join("");
+  const body = ms.length ? `<div class="scroll"><table>
+      <tr><th>Bet</th><th>Pinnacle</th><th title="Pinnacle's price without its margin">Fair odds</th><th>Danske Spil</th><th>Edge</th><th>Stake</th></tr>${rows}</table></div>
+      <div class="note">Type Danske Spil's odds next to the bet with the same line. A different line (−3 vs −3.5, 47 vs 47.5) is a different bet and can't be judged. Moneyline includes overtime: Danske Spil's NFL bets “after regulation” (with a tie option) are not the same bet. Whole-number lines give your stake back when the result lands on the line.</div>
+      <div data-us-note="${esc(g.key)}"></div>`
+    : `<p class="muted">No Pinnacle prices for this game yet.</p>`;
+  return `<div class="usgame">${head}<div class="usbody">
+    <p class="muted">Pinnacle ${g.fetched_at ? "as of " + kickoffLabel(g.fetched_at) : "–"}. 1 = ${esc(g.home)} (home), 2 = ${esc(g.away)}.</p>${body}</div></div>`;
+}
+async function usEvaluate(key) {
+  const odds = {};
+  for (const [m, v] of Object.entries(usTyped[key] || {})) { const o = parseOdds(v); if (o) odds[m] = o; }
+  const seq = ++usSeq;
+  let r;
+  try { r = await api("/api/us/evaluate", { method: "POST", body: JSON.stringify({ key, odds, settings: settings() }) }); }
+  catch (e) { const n = document.querySelector(`[data-us-note="${key}"]`); if (n) n.innerHTML = `<div class="note">${esc(e.message)}</div>`; return; }
+  if (seq !== usSeq) return;
+  usResult[key] = r;
+  usFill(key);
+}
+// Edge, stake and Log for the open game, filled in place so typing keeps focus.
+function usFill(key) {
+  const r = usResult[key], g = usData && usData.games.find(x => x.key === key);
+  if (!g) return;
+  const sel = {};
+  (r ? r.selections : []).forEach(s => sel[s.market] = s);
+  const mine = usMine(g);
+  document.querySelectorAll(`#us-games tr[data-row]`).forEach(tr => {
+    const m = tr.dataset.row, s = sel[m], had = mine.find(b => b.market === m);
+    const typed = parseOdds((usTyped[key] || {})[m]);
+    const cur = s && typed && Math.abs(s.odds - typed) < 1e-9 ? s : null;
+    tr.classList.toggle("rec", !!(cur && cur.recommended));
+    tr.querySelector('[data-cell="ev"]').innerHTML = cur ? `<span class="${cur.ev >= 0 ? "pos" : "neg"}">${cur.ev >= 0 ? "+" : ""}${pct(cur.ev)}</span>` : "";
+    tr.querySelector('[data-cell="stake"]').innerHTML = had ? `<span class="logged">Logged · ${num(had.stake, 0)} kr @ ${num(had.odds)}</span>`
+      : cur && cur.recommended ? (cur.capped && cur.stake === 0 ? `<span class="muted">limit</span>`
+        : `<span class="logbox"><input data-us-stake="${esc(m)}" inputmode="decimal" autocomplete="off" value="${num(cur.stake, 0)}" aria-label="Stake (kr)"><button class="small" data-us-log="${esc(m)}">Log</button></span>`) : "";
+  });
+  document.querySelectorAll("#us-games [data-us-log]").forEach(b => b.onclick = () => usLog(key, sel[b.dataset.usLog], b));
+  const note = document.querySelector(`[data-us-note="${key}"]`);
+  if (note) {
+    const ex = r && r.match_exposure, n = [];
+    if (r && r.unmatched.length) n.push(`Not judged (no Pinnacle price on that line): ${r.unmatched.map(m => marketLabel(m, g.home, g.away)).join(", ")}.`);
+    if (ex && ex.staked > 0) n.push(`${num(ex.staked, 0)} of ${num(ex.limit, 0)} kr game limit used.`);
+    note.innerHTML = n.map(x => `<div class="note">${esc(x)}</div>`).join("");
+  }
+}
+async function usLog(key, s, btn) {
+  const g = usData.games.find(x => x.key === key);
+  const inp = document.querySelector(`#us-games [data-us-stake="${CSS.escape(s.market)}"]`);
+  const stake = parseFloat(String(inp ? inp.value : "").replace(",", "."));
+  const note = document.querySelector(`[data-us-note="${key}"]`);
+  if (!(stake > 0)) { note.innerHTML = `<div class="note">Enter a stake above 0.</div>`; return; }
+  btn.disabled = true;
+  try {
+    await api("/api/bets", { method: "POST", body: JSON.stringify({
+      dataset: g.sport, home: g.home, away: g.away, market: s.market, odds: s.odds, stake,
+      p_model: s.p_model, p_blend: s.p_blend, ev: s.ev, kickoff: g.kickoff, match_key: g.key }) });
+  } catch (e) { btn.disabled = false; note.innerHTML = `<div class="note">Not logged: ${esc(e.message)}</div>`; return; }
+  await loadBets().catch(() => {});
+  usEvaluate(key);
+}
+document.querySelectorAll("[data-us]").forEach(c => c.onclick = () => {
+  usSport = c.dataset.us; store.set("us-sport", usSport); usOpen = null; loadUs();
+});
+$("us-fetch").onclick = () => loadUs(true);
+
 // ------------------------------------------------------------------ init
 function showTab(name) {
-  if (!["matches", "bets", "stats"].includes(name)) name = "matches";
+  if (!["matches", "bets", "us", "stats"].includes(name)) name = "matches";
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
   $("tab-matches").hidden = name !== "matches";
   $("tab-bets").hidden = name !== "bets";
   $("tab-stats").hidden = name !== "stats";
+  $("tab-us").hidden = name !== "us";
   document.body.dataset.tab = name;
+  if (name === "us") loadUs();
   store.set("tab", name);
   if (name === "stats") loadStats();
 }
@@ -1297,6 +1449,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   loadBets(); loadAlphaInfo();
   if (!$("tab-stats").hidden) loadStats();
+  if (!$("tab-us").hidden) loadUs();
 });
 document.querySelectorAll("[data-sub]").forEach(b => b.onclick = () => showSub(b.dataset.sub));
 

@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import fixtures, implied, import_odds, scheduler, service, sharp_odds, stats, track, tuning, uefa, validate
+from . import fixtures, implied, import_odds, scheduler, service, sharp_odds, stats, track, tuning, uefa, us_sports, validate
 from .model import COMBO_SEP, DixonColes, combo_probability, markets, overlap
 from .history import HistoryStore
 from .store import BetStore, DuplicateBet
@@ -211,6 +211,21 @@ def _utc(t) -> pd.Timestamp:
     return t.tz_convert("UTC") if t.tzinfo else t.tz_localize("UTC")
 
 
+def _fair(match_key: str | None, prices: dict[str, float]) -> dict[str, float]:
+    """Pinnacle's de-margined probabilities: two-way markets for NFL / NBA
+    games, football's markets otherwise."""
+    if match_key and match_key.startswith("us:"):
+        return us_sports.fair(prices)
+    return market_probabilities(prices)
+
+
+def _kickoff(match_key: str | None) -> str | None:
+    if not match_key:
+        return None
+    m = history.us_game(match_key) if match_key.startswith("us:") else history.match(match_key)
+    return (m or {}).get("kickoff")
+
+
 def _sharp_at_kickoff(bets: list[dict]) -> dict[int, float]:
     """bet id -> Pinnacle's fair probability for its market, from the last
     fetch before kick-off (the latest so far for matches not yet started)."""
@@ -218,11 +233,11 @@ def _sharp_at_kickoff(bets: list[dict]) -> dict[int, float]:
     for b in bets:
         if not b.get("match_key"):  # sharp prices are stored per board match
             continue
-        kickoff = b.get("kickoff") or (history.match(b["match_key"]) or {}).get("kickoff")
+        kickoff = b.get("kickoff") or _kickoff(b["match_key"])
         if not kickoff:
             continue
         prices = history.sharp_before(b["match_key"], _utc(kickoff).isoformat(timespec="seconds"))  # fetched_at is ISO UTC
-        p = market_probabilities(prices).get(b["market"])
+        p = _fair(b["match_key"], prices).get(b["market"])
         if p is not None:
             out[b["id"]] = p
     return out
@@ -239,9 +254,9 @@ def stats_soft() -> dict:
     for p in last.values():
         ident = (p["match_key"], p["fetched_at"])
         if ident not in fits:
-            direct = market_probabilities(p["sharp"])
+            direct = _fair(p["match_key"], p["sharp"])
             try:
-                fitted = implied.grid(p["sharp"])
+                fitted = None if p["match_key"].startswith("us:") else implied.grid(p["sharp"])
             except Exception:
                 fitted = None
             fits[ident] = {"direct": direct, "implied": markets(fitted[1]) if fitted else {}}
@@ -251,7 +266,7 @@ def stats_soft() -> dict:
             prob, basis = f["implied"].get(p["market"]), "implied"
         if prob is None:
             continue
-        m = history.match(p["match_key"]) or {}
+        m = (history.us_game(p["match_key"]) if p["match_key"].startswith("us:") else history.match(p["match_key"])) or {}
         rows.append({"competition": p["competition"], "market": p["market"], "odds": p["odds"],
                      "gap": float(p["odds"] * prob - 1), "basis": basis, "fair": float(1 / prob),
                      "match": f"{m.get('home', '')} – {m.get('away', '')}", "kickoff": m.get("kickoff")})
@@ -461,6 +476,73 @@ def price_combo(req: ComboIn) -> dict:
     }
 
 
+# ------------------------------------------------------------- NFL / NBA
+def _us_sport(sport: str) -> str:
+    if sport not in us_sports.SPORTS:
+        raise HTTPException(400, f"Unknown sport {sport!r}: {', '.join(us_sports.SPORTS)}")
+    return sport
+
+
+def _us_games(sport: str, message: str | None = None) -> dict:
+    now = pd.Timestamp.now(tz="UTC")
+    games = []
+    for g in history.us_games(sport, now):
+        sharp = history.sharp_for(g["key"])
+        prices = {m: p["odds"] for m, p in sharp["prices"].items()} if sharp else {}
+        games.append({**g, "fetched_at": sharp["fetched_at"] if sharp else None, "prices": prices,
+                      "fair": us_sports.fair(prices)})
+    last = history.odds_api_state(now)["last_fetch"].get(us_sports.SPORTS[sport])
+    return {"sport": sport, "games": games, "last_fetch": last, "cost": us_sports.COST,
+            "credits": _credits(), "message": message}
+
+
+@app.get("/api/us/games")
+def us_games(sport: str) -> dict:
+    return _us_games(_us_sport(sport))
+
+
+@app.post("/api/us/fetch/{sport}")
+def us_fetch(sport: str) -> dict:
+    r = us_sports.fetch(history, _us_sport(sport))
+    return _us_games(sport, r["message"])
+
+
+class UsEvaluateIn(BaseModel):
+    key: str
+    odds: dict[str, float] = {}
+    settings: SettingsIn = SettingsIn()
+
+
+@app.post("/api/us/evaluate")
+def us_evaluate(req: UsEvaluateIn) -> dict:
+    """Typed Danske Spil prices for an NFL / NBA game against Pinnacle's fair
+    prices. Only markets Pinnacle quotes on the same line are judged."""
+    received = pd.Timestamp.now(tz="UTC").isoformat(timespec="milliseconds")
+    game = history.us_game(req.key)
+    if game is None:
+        raise HTTPException(404, "No such game")
+    sharp = history.sharp_for(req.key)
+    prices = {m: p["odds"] for m, p in sharp["prices"].items()} if sharp else {}
+    fair = us_sports.fair(prices)
+    odds = {m: o for m, o in req.odds.items() if o and o > 1}
+    st = Settings(**req.settings.model_dump())
+    already = _staked_on(EvaluateIn(dataset=game["sport"], home=game["home"], away=game["away"], match_key=req.key))
+    selections = evaluate(fair, {m: o for m, o in odds.items() if m in fair}, st, already_staked=already, sharp=fair)
+    try:
+        history.record_odds(req.key, game["sport"], game["home"], game["away"], [s.to_dict() for s in selections], received)
+    except Exception as exc:  # history must never break pricing
+        log.warning("could not record odds: %s", exc)
+    return {
+        "game": game,
+        "selections": [s.to_dict() for s in selections],
+        "unmatched": sorted(m for m in odds if m not in fair),
+        "match_exposure": {"staked": already, "limit": round(st.match_limit_pct * st.bankroll, 2)},
+        "sharp": None if not sharp else {"fetched_at": sharp["fetched_at"], "odds": prices, "probabilities": fair,
+                                         "books": sorted({sharp_odds.BOOK_NAMES.get(p["book"], p["book"])
+                                                          for p in sharp["prices"].values()})},
+    }
+
+
 @app.get("/api/bets")
 def list_bets() -> dict:
     return {"bets": store.list(), "summary": store.summary()}
@@ -484,13 +566,13 @@ def bet_detail(bet_id: int) -> dict:
         raise HTTPException(404, "No such bet")
     logged = _utc(bet["created"]) + pd.Timedelta(minutes=1)  # odds are stored just before the bet
     key = bet.get("match_key")
-    kickoff = bet.get("kickoff") or ((history.match(key) or {}).get("kickoff") if key else None)
+    kickoff = bet.get("kickoff") or _kickoff(key)
 
     def pinnacle(before: pd.Timestamp) -> dict | None:
         got = history.sharp_fetch_before(key, before.isoformat(timespec="seconds"))
         if not got:
             return None
-        probs = market_probabilities(got["odds"])
+        probs = _fair(key, got["odds"])
         p = probs.get(bet["market"])
         return {**got, "probabilities": probs, "vs": None if p is None else bet["odds"] * p - 1}
 

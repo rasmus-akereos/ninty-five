@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .model import settle
+from .model import is_push, settle
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "bets.sqlite"
 
@@ -165,6 +165,8 @@ class BetStore:
                 status, pnl = "void", 0.0
             elif cash_out is not None:
                 status, pnl = "took profit", float(cash_out) - row["stake"]
+            elif home_goals is not None and away_goals is not None and is_push(row["market"], home_goals, away_goals):
+                status, pnl = "void", 0.0  # landed on the line: stake back
             elif home_goals is not None and away_goals is not None:
                 won = settle(row["market"], home_goals, away_goals)
                 if won is None:

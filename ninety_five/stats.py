@@ -34,6 +34,10 @@ def market_group(market: str) -> str:
         return "BTTS"
     if market in ("1X", "12", "X2"):
         return "Double chance"
+    if market.startswith("ML "):
+        return "Moneyline"
+    if market.startswith("Spread "):
+        return "Spread"
     return "Other"
 
 
