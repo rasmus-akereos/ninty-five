@@ -1,4 +1,4 @@
-"""NFL and NBA: Danske Spil's prices judged against Pinnacle's.
+"""NFL, NBA and college football (NCAAF): Danske Spil's prices judged against Pinnacle's.
 
 There is no model here. Pinnacle's prices for these leagues are among the
 sharpest anywhere, so its de-margined price is the fair price, exactly as for
@@ -25,7 +25,7 @@ import pandas as pd
 from . import sharp_odds
 from .value import devig_power
 
-SPORTS = {"NFL": "americanfootball_nfl", "NBA": "basketball_nba"}
+SPORTS = {"NFL": "americanfootball_nfl", "NBA": "basketball_nba", "NCAAF": "americanfootball_ncaaf"}
 MARKETS = "h2h,spreads,totals"
 COST = len(MARKETS.split(","))
 MIN_GAP = pd.Timedelta(hours=1)

@@ -236,7 +236,7 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
     <nav class="tabs" role="tablist">
       <button class="tab" role="tab" data-tab="matches">Matches</button>
       <button class="tab" role="tab" data-tab="bets">Bet log <span class="n" id="bets-count"></span></button>
-      <button class="tab" role="tab" data-tab="us">NFL / NBA</button>
+      <button class="tab" role="tab" data-tab="us">US sports</button>
       <button class="tab" role="tab" data-tab="stats">Statistics</button>
     </nav>
     <button class="icon-btn primary" id="loadboard" title="Fetch the latest fixtures and results"><span class="spin" aria-hidden="true">↻</span> <span class="label">Refresh</span></button>
@@ -285,10 +285,11 @@ a.bookmarklet { display: inline-block; padding: 3px 12px; border-radius: 999px; 
 
   <div id="tab-us" class="tabpane" hidden>
   <section>
-    <div class="board-head"><h2>NFL / NBA</h2>
+    <div class="board-head"><h2>US sports</h2>
       <div class="chips subtabs" role="tablist">
         <button class="chip" data-us="NFL">NFL</button>
         <button class="chip" data-us="NBA">NBA</button>
+        <button class="chip" data-us="NCAAF" title="College football">NCAAF</button>
       </div>
     </div>
     <div class="usbar"><button class="small" id="us-fetch">Get Pinnacle prices</button><span class="muted" id="us-info"></span></div>
@@ -872,6 +873,7 @@ async function handleImport() {
   let r;
   try { r = await api("/api/import-odds", { method: "POST", body: JSON.stringify({ text: d.x || "", title: d.t || "" }) }); }
   catch (e) { showImportNote(`Couldn't read the Danske Spil page: ${e.message}`); return; }
+  if (r.us) { usImport(r); return; }
   await boardReady;
   showTab("matches");
   const n = Object.keys(r.odds).length;
@@ -886,6 +888,31 @@ async function handleImport() {
     showImportNote(`Imported ${n} prices for ${r.home || "?"} – ${r.away || "?"} at ${at}, but couldn't find that match on the board. Pick the two teams below.`);
   }
   document.querySelector("#board .match.open")?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+// An NFL / NBA / college football page: open the game on the US sports tab
+// with Danske Spil's prices on Pinnacle's lines filled in.
+async function usImport(r) {
+  usSport = r.us.sport; store.set("us-sport", usSport); usOpen = r.us.key;
+  showTab("us");
+  await loadUs();  // the newest load wins: showTab's own load won't redraw over this
+  const at = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  const g = usData && usData.games.find(x => x.key === r.us.key);
+  const note = msg => { $("us-msg").innerHTML = `<div class="note">${esc(msg)}</div>`; };
+  if (!g) {
+    usOpen = null;
+    note(`Read ${Object.keys(r.odds).length} prices for ${r.home || "?"} – ${r.away || "?"}, but that game isn't in the stored ${usSport} games. Press “Get Pinnacle prices”, then click the bookmark on the Danske Spil page again.`);
+    return;
+  }
+  const typed = {};
+  for (const [m, o] of Object.entries(r.odds)) if (m in g.prices) typed[m] = String(o).replace(".", ",");
+  usTyped[g.key] = typed;
+  renderUs();
+  const n = Object.keys(typed).length, other = Object.keys(r.odds).length - n;
+  note(`Imported ${n} Danske Spil prices for ${g.away} @ ${g.home} at ${at}` +
+    (other ? ` (${other} more on lines Pinnacle doesn't quote, left out).` : "."));
+  usEvaluate(g.key);
+  document.querySelector("#us-games .usbody")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function showImportNote(msg) { const n = $("import-note"); n.textContent = msg; n.hidden = false; }
@@ -1315,7 +1342,7 @@ async function loadAlphaInfo() {
 // price on the same line (us_sports.py). Pinnacle's prices are fetched on
 // demand (3 credits a fetch).
 let usSport = store.get("us-sport") || "NFL";
-let usData = null, usOpen = null, usSeq = 0;
+let usData = null, usOpen = null, usSeq = 0, usLoadSeq = 0;
 const usTyped = {}, usResult = {}, usTimers = {};
 function usOrder(markets) {
   const rank = m => m === "ML 1" ? 0 : m === "ML 2" ? 1 : m.startsWith("Spread 1") ? 2 : m.startsWith("Spread 2") ? 3
@@ -1326,9 +1353,13 @@ async function loadUs(fetch = false) {
   document.querySelectorAll("[data-us]").forEach(c => c.classList.toggle("active", c.dataset.us === usSport));
   const btn = $("us-fetch");
   if (fetch) { btn.disabled = true; btn.textContent = "Fetching…"; }
+  const seq = ++usLoadSeq;
   try {
-    usData = await api(fetch ? `/api/us/fetch/${usSport}` : `/api/us/games?sport=${usSport}`, fetch ? { method: "POST" } : {});
+    const d = await api(fetch ? `/api/us/fetch/${usSport}` : `/api/us/games?sport=${usSport}`, fetch ? { method: "POST" } : {});
+    if (seq !== usLoadSeq) return;  // a newer load is on its way
+    usData = d;
   } catch (e) {
+    if (seq !== usLoadSeq) return;
     $("us-msg").innerHTML = `<div class="note">${esc(e.message)}</div>`;
     return;
   } finally { btn.disabled = false; btn.textContent = "Get Pinnacle prices"; }

@@ -176,11 +176,16 @@ def import_page_odds(req: ImportIn) -> dict:
         import_odds.keep_page(req.text, req.title)
     except OSError as exc:  # keeping the page is a convenience, never a failure
         log.warning("could not keep imported page: %s", exc)
+    us = import_odds.parse_us_page(req.text, req.title)
+    if us["sport"]:  # NFL / NBA / college football: a game on the US tab
+        game, odds = import_odds.find_us_game(us, history.us_games(us["sport"], pd.Timestamp.now(tz="UTC")))
+        return {"home": us["home"], "away": us["away"], "odds": odds if game else us["odds"], "match_key": None,
+                "us": {"sport": us["sport"], "key": game["key"] if game else None}}
     parsed = import_odds.parse_page(req.text, req.title)
     match = None
     if parsed["home"] and parsed["away"]:
         match = import_odds.find_match(parsed["home"], parsed["away"], history.board(days=30))
-    return {**parsed, "match_key": match["key"] if match else None}
+    return {**parsed, "match_key": match["key"] if match else None, "us": None}
 
 
 @app.get("/api/track-record")

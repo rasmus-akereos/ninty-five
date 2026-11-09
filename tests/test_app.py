@@ -503,3 +503,20 @@ def test_import_keeps_the_last_pages_for_building_parsers(client):
     assert len(files) == import_odds.KEEP_IMPORTS
     import json
     assert json.loads(files[-1].read_text()) ["text"] == f"page {import_odds.KEEP_IMPORTS + 2}"
+
+
+def test_import_of_an_nfl_page_finds_the_game_on_the_us_tab(client):
+    _us_game()
+    text = ("Sportsgrene\n/\nAmerikansk fodbold\n/\nUSA\n/\nUSA NFL\nKampvinder (Inkl. OT)\n1\n3,40\n2\n1,35\n"
+            "Handicap (inkl. OT)\nChicago Bears\n+7.5\n1,90\nDetroit Lions\n-7.5\n1,90\nVis mere")
+    r = client.post("/api/import-odds", json={"text": text, "title": "Chicago Bears - Detroit Lions | USA NFL Odds"}).json()
+    # Danske Spil lists the Bears first; on the tab the Lions are home (1).
+    assert r["us"] == {"sport": "NFL", "key": "us:ev1"}
+    assert r["match_key"] is None
+    assert r["odds"] == {"ML 2": 3.4, "ML 1": 1.35, "Spread 2 +7.5": 1.9, "Spread 1 -7.5": 1.9}
+    other = client.post("/api/import-odds", json={"text": text, "title": "Green Bay Packers - Detroit Lions | USA NFL Odds"}).json()
+    assert other["us"] == {"sport": "NFL", "key": None} and other["odds"]["ML 1"] == 3.4
+
+
+def test_college_football_is_a_us_sport(client):
+    assert client.get("/api/us/games", params={"sport": "NCAAF"}).status_code == 200

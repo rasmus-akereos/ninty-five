@@ -230,3 +230,122 @@ def parse_page(text: str, title: str = "") -> dict:
         i += 3
 
     return {"home": home, "away": away, "odds": odds}
+
+
+# ------------------------------------------------- NFL, NBA, college football
+# The page's breadcrumb ("Sportsgrene / Amerikansk fodbold / USA / USA NFL")
+# names the sport and league. Markets (1 = the team Danske Spil lists first):
+#   Kampvinder (Inkl. OT) / 1 / 1,80 / 2 / 2,05                 -> ML 1, ML 2
+#   Handicap (inkl. OT) / Team 1 / -2.5 / 1,95 / Team 2 / +2.5 / 1,80 / -2.0 / ...
+#                                     (a ladder of lines, team 1 then team 2)
+#   Antal point O/U (Inkl. OT) / O / 41.5 / 1,80 / U / 41.5 / 1,93 / ...
+# "Kampvinder (Eks. OT)" (a tie possible) and first-half/quarter lines are
+# different bets and are left out.
+POINT = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
+
+
+def _breadcrumb(lines: list[str]) -> list[str]:
+    for i in range(len(lines) - 1):
+        if lines[i] == "Sportsgrene" and lines[i + 1] == "/":
+            parts, j = [], i + 2
+            while j < len(lines):
+                parts.append(lines[j])
+                if j + 1 < len(lines) and lines[j + 1] == "/":
+                    j += 2
+                else:
+                    break
+            return parts
+    return []
+
+
+def _us_sport(lines: list[str], title: str) -> str | None:
+    crumbs = _breadcrumb(lines)
+    if crumbs:
+        sport, league = crumbs[0].lower(), crumbs[-1]
+    else:  # no breadcrumb: the title's middle part ("USA NFL Odds")
+        parts = title.split(" | ")
+        sport, league = "", parts[1] if len(parts) > 1 else ""
+    words = league.upper().split()
+    if "NFL" in words and sport in ("", "amerikansk fodbold"):
+        return "NFL"
+    if "NBA" in words and sport in ("", "basketball"):
+        return "NBA"
+    if sport == "amerikansk fodbold" and ("NCAA" in words or "NCAAF" in words or "COLLEGE" in words):
+        return "NCAAF"
+    return None
+
+
+def parse_us_page(text: str, title: str = "") -> dict:
+    """{"sport": "NFL" | "NBA" | "NCAAF" | None, "home", "away", "odds"}: the
+    teams in Danske Spil's order (1, 2) and the moneyline, spread and total
+    prices named as in us_sports.py."""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    head = title.split(" | ")[0]
+    home = away = None
+    if " - " in head:
+        home, away = (x.strip() for x in head.split(" - ", 1))
+    odds: dict[str, float] = {}
+    for k, h in enumerate(lines):
+        h = h.lower()
+        i = k + 1
+        if h == "kampvinder (inkl. ot)":
+            if i + 3 < len(lines) and lines[i] == "1" and lines[i + 2] == "2":
+                p1, p2 = _price(lines[i + 1]), _price(lines[i + 3])
+                if p1 and p2:
+                    odds.setdefault("ML 1", p1)
+                    odds.setdefault("ML 2", p2)
+        elif h == "handicap" or h.startswith("handicap ("):
+            got = []
+            while i < len(lines):
+                if lines[i] in (home, away):
+                    i += 1
+                elif i + 1 < len(lines) and POINT.match(lines[i]) and (p := _price(lines[i + 1])):
+                    got.append((float(lines[i]), p))
+                    i += 2
+                else:
+                    break
+            for (l1, p1), (l2, p2) in zip(got[0::2], got[1::2]):
+                if l1 == -l2:
+                    odds.setdefault(f"Spread 1 {l1:+g}", p1)
+                    odds.setdefault(f"Spread 2 {l2:+g}", p2)
+        elif h.startswith("antal point o/u") and "halvleg" not in h and "quarter" not in h:
+            while i + 2 < len(lines) and lines[i] in ("O", "U") and POINT.match(lines[i + 1]):
+                if (p := _price(lines[i + 2])) is not None:
+                    odds.setdefault(f"{'Over' if lines[i] == 'O' else 'Under'} {float(lines[i + 1]):g}", p)
+                i += 3
+    return {"sport": _us_sport(lines, title), "home": home, "away": away, "odds": odds}
+
+
+def _swap(market: str) -> str:
+    """The same bet with teams 1 and 2 swapped."""
+    if market in ("ML 1", "ML 2"):
+        return "ML 2" if market == "ML 1" else "ML 1"
+    if market.startswith("Spread "):
+        _, side, line = market.split()
+        return f"Spread {'2' if side == '1' else '1'} {line}"
+    return market
+
+
+def find_us_game(parsed: dict, games: list[dict]) -> tuple[dict | None, dict[str, float]]:
+    """The stored game for a parsed page, and its odds named from that game's
+    side (1 = home). Danske Spil may list either team first. Both teams must
+    match; of several fits, the one whose names fit closest ("Michigan" is
+    Michigan Wolverines, not Michigan State)."""
+    a, b = parsed.get("home"), parsed.get("away")
+    if not a or not b:
+        return None, {}
+    fits = []
+    for g in games:
+        for first, second, swapped in ((g["home"], g["away"], False), (g["away"], g["home"], True)):
+            if _same(a, first) and _same(b, second):
+                gap = sum(abs(len(_tokens(x)) - len(_tokens(y))) for x, y in ((a, first), (b, second)))
+                fits.append((gap, g, swapped))
+    if not fits:
+        return None, {}
+    best = min(f[0] for f in fits)
+    fits = [f for f in fits if f[0] == best]
+    if len({(f[1]["home"], f[1]["away"]) for f in fits}) != 1:
+        return None, {}
+    _, g, swapped = min(fits, key=lambda f: f[1].get("kickoff", ""))
+    odds = parsed["odds"]
+    return g, ({_swap(m): p for m, p in odds.items()} if swapped else dict(odds))
