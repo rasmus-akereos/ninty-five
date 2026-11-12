@@ -69,6 +69,16 @@ SPORTS = {
     "Champions League": "soccer_uefa_champs_league",
     "Europa League": "soccer_uefa_europa_league",
 }
+# Internationals are one board competition; the tournament (row "detail")
+# decides. The Odds API has no friendlies, African or CONCACAF qualifiers.
+DETAILS = {
+    "UEFA Nations League": "soccer_uefa_nations_league",
+}
+
+
+def sport_of(row: dict) -> str | None:
+    """The Odds API sport key for a board match, or None if not covered."""
+    return DETAILS.get(row.get("detail") or "") or SPORTS.get(row.get("competition"))
 
 MARKETS = "h2h,totals"
 COST = len(MARKETS.split(","))   # credits per league per fetch
@@ -159,7 +169,7 @@ def due_sports(rows: list[dict], now: pd.Timestamp, last_fetch: dict[str, str]) 
     within MIN_GAP, soonest kick-off first."""
     soonest: dict[str, pd.Timestamp] = {}
     for r in rows:
-        sport = SPORTS.get(r.get("competition"))
+        sport = sport_of(r)
         k = pd.Timestamp(r["kickoff"])
         if sport is None or not (now <= k < now + HORIZON):
             continue
@@ -171,7 +181,7 @@ def due_sports(rows: list[dict], now: pd.Timestamp, last_fetch: dict[str, str]) 
 # ------------------------------------------------------------------ update
 def match_events(events: list, rows: list[dict], sport: str) -> list[tuple[dict, dict]]:
     """(board row, event) pairs: same league, kick-off close, both teams match."""
-    league = [r for r in rows if SPORTS.get(r.get("competition")) == sport]
+    league = [r for r in rows if sport_of(r) == sport]
     pairs = []
     for e in events:
         try:

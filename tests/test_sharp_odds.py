@@ -141,3 +141,14 @@ def test_big_edge_against_a_sharp_price_is_flagged():
     assert sel["1"].ev == pytest.approx(0.128) and sel["1"].caution == "amber"  # 12.8% edge: halved
     sel = {s.market: s for s in evaluate(MODEL, ODDS, Settings(alpha=0.5), sharp={"1": 0.52, "X": 0.22, "2": 0.26})}
     assert sel["1"].caution == "red"  # 24.8%: quartered
+
+
+def test_uefa_nations_league_internationals_are_fetched_friendlies_are_not():
+    from ninety_five import sharp_odds
+    now = pd.Timestamp("2026-11-12T08:00:00Z")
+    soon = "2026-11-13T19:45:00+00:00"
+    rows = [{"competition": "International", "detail": "UEFA Nations League", "kickoff": soon, "home": "Denmark", "away": "Spain"},
+            {"competition": "International", "detail": "International Friendly", "kickoff": soon, "home": "Norway", "away": "Japan"}]
+    assert sharp_odds.due_sports(rows, now, {}) == ["soccer_uefa_nations_league"]
+    event = {"home_team": "Denmark", "away_team": "Spain", "commence_time": soon}
+    assert [r["home"] for r, _ in sharp_odds.match_events([event], rows, "soccer_uefa_nations_league")] == ["Denmark"]
