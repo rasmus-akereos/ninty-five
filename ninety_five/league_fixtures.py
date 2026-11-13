@@ -15,13 +15,16 @@ resolved against the division's current teams. Times are UK local time.
 from __future__ import annotations
 
 import io
+import logging
 import time
 
 import pandas as pd
 
-from . import data
+from . import data, sharp_odds
 from .data import _fetch
 from .import_odds import _tokens, same_team
+
+log = logging.getLogger(__name__)
 
 FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"
 
@@ -35,6 +38,11 @@ NEW_DIVISIONS = {
     "F2": "France 2",
     "DNK": "Denmark 1",
 }
+
+# The English lower leagues' next round is sometimes missing from fixtures.csv
+# until late in the week. Their games are then taken from The Odds API's free
+# fixture list (no credits); the fixtures file wins where both have a game.
+EVENT_SPORTS = {"E2": "soccer_england_league1", "E3": "soccer_england_league2"}
 
 # (division, fixtures-file name) -> results-file name, for names the matcher
 # can't resolve. Extend when the board warns about an unknown team name.
@@ -158,8 +166,34 @@ def match_key(division: str, kickoff_utc: pd.Timestamp, home: str, away: str) ->
     return f"fdcu:{division}:{day}:{home}:{away}"
 
 
+def parse_events(division: str, events: list) -> pd.DataFrame:
+    """The Odds API's fixture list as fixture rows of `division`."""
+    rows = []
+    for e in events:
+        try:
+            rows.append((division, pd.Timestamp(e["commence_time"]).tz_convert("UTC"),
+                         e["home_team"].strip(), e["away_team"].strip()))
+        except (KeyError, ValueError, TypeError, AttributeError):
+            continue
+    return pd.DataFrame(rows, columns=COLUMNS)
+
+
+def _event_fixtures() -> pd.DataFrame:
+    frames = []
+    for division, sport in EVENT_SPORTS.items():
+        try:
+            frames.append(parse_events(division, sharp_odds.events(sport)))
+        except Exception as exc:  # the fixtures file still works without it
+            log.warning("The Odds API fixture list for %s failed: %s", sport, exc)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=COLUMNS)
+
+
 def _all_fixtures() -> pd.DataFrame:
-    return _memo("fixtures", lambda: parse_main(_fetch(FIXTURES_URL)))
+    def load():
+        main, extra = parse_main(_fetch(FIXTURES_URL)), _event_fixtures()
+        return pd.concat([main, extra], ignore_index=True) if len(extra) else main
+
+    return _memo("fixtures", load)
 
 
 def upcoming(days: int, now: pd.Timestamp | None = None) -> pd.DataFrame:
@@ -169,6 +203,7 @@ def upcoming(days: int, now: pd.Timestamp | None = None) -> pd.DataFrame:
     df = df[(df["kickoff"] >= now) & (df["kickoff"] < now.normalize() + pd.Timedelta(days=days))]
     df = _resolve(df.reset_index(drop=True)) if len(df) else df.assign(unmatched=[])
     df["key"] = [match_key(r.division, r.kickoff, r.home, r.away) for r in df.itertuples()]
+    df = df.drop_duplicates("key")  # a game in both the fixtures file and the fixture list: the file's row
     df["dataset"] = df["division"].map(data.DIVISION_COUNTRY)
     df["competition"] = df["division"].map(NEW_DIVISIONS)
     return df.sort_values("kickoff").reset_index(drop=True)

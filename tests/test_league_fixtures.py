@@ -155,3 +155,40 @@ def test_match_result_finds_result_under_changed_spelling():
 def test_match_result_prefers_exact_names_over_lenient():
     res = _res([("2026-11-04", "Oxford City", "Reading", 5, 5), ("2026-11-04", "Oxford", "Reading", 2, 0)])
     assert league_fixtures.match_result(res, "Oxford", "Reading", pd.Timestamp("2026-11-04T19:45Z")) == (2, 0)
+
+
+# The Odds API's free fixture list (no credits), for weeks when fixtures.csv
+# hasn't got the English lower leagues' next round yet.
+L1_EVENTS = [{"commence_time": "2026-11-04T19:45:00Z", "home_team": "Oxford United", "away_team": "Reading"},
+             {"commence_time": "2026-11-07T15:00:00Z", "home_team": "Wigan Athletic", "away_team": "Oxford United"}]
+
+
+def test_english_lower_league_games_missing_from_fixtures_come_from_the_odds_api(monkeypatch):
+    from ninety_five import sharp_odds
+    main = b"Div,Date,Time,HomeTeam,AwayTeam\nE2,04/11/2026,19:45,Oxford Utd,Reading\n"
+    monkeypatch.setattr(league_fixtures, "_fetch", lambda url: main)
+    monkeypatch.setattr(league_fixtures, "_division_teams", lambda div: ENG3)
+    asked = []
+    monkeypatch.setattr(sharp_odds, "events", lambda sport: asked.append(sport) or (L1_EVENTS if sport == "soccer_england_league1" else []))
+    league_fixtures._cache.clear()
+    df = league_fixtures.upcoming(7, now=pd.Timestamp("2026-11-03 12:00", tz="UTC"))
+    assert sorted(asked) == ["soccer_england_league1", "soccer_england_league2"]
+    assert list(df["key"]) == ["fdcu:E2:2026-11-04:Oxford:Reading", "fdcu:E2:2026-11-07:Wigan:Oxford"]  # no double
+    w = df.iloc[1]
+    assert w.competition == "England 3" and w.dataset == "ENG" and w.unmatched == ""
+    assert w.kickoff == pd.Timestamp("2026-11-07 15:00", tz="UTC")
+
+
+def test_odds_api_fixture_list_failing_leaves_the_fixtures_file(monkeypatch):
+    from ninety_five import sharp_odds
+    main = b"Div,Date,Time,HomeTeam,AwayTeam\nE2,04/11/2026,19:45,Oxford Utd,Reading\n"
+    monkeypatch.setattr(league_fixtures, "_fetch", lambda url: main)
+    monkeypatch.setattr(league_fixtures, "_division_teams", lambda div: ENG3)
+
+    def down(sport):
+        raise OSError("timed out")
+
+    monkeypatch.setattr(sharp_odds, "events", down)
+    league_fixtures._cache.clear()
+    df = league_fixtures.upcoming(7, now=pd.Timestamp("2026-11-03 12:00", tz="UTC"))
+    assert list(df["key"]) == ["fdcu:E2:2026-11-04:Oxford:Reading"]

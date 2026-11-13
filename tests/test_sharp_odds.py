@@ -159,3 +159,13 @@ def test_championship_is_fetched():
     now = pd.Timestamp("2026-11-20T08:00:00Z")
     rows = [{"competition": "England 2", "kickoff": "2026-11-21T12:30:00+00:00", "home": "Norwich", "away": "Cardiff"}]
     assert sharp_odds.due_sports(rows, now, {}) == ["soccer_efl_champ"]
+
+
+def test_event_list_is_free_and_needs_a_key(monkeypatch):
+    from ninety_five import sharp_odds
+    assert sharp_odds.events("soccer_england_league1") == []  # no key: no request
+    calls = []
+    monkeypatch.setattr(sharp_odds, "api_key", lambda: "k")
+    monkeypatch.setattr(sharp_odds, "_get", lambda path, params: calls.append((path, params)) or ([{"id": "x"}], {}))
+    assert sharp_odds.events("soccer_england_league1") == [{"id": "x"}]
+    assert calls == [("sports/soccer_england_league1/events", {"apiKey": "k"})]

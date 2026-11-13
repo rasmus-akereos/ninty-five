@@ -110,6 +110,16 @@ def _get(path: str, params: dict) -> tuple[object, dict]:
         return json.load(r), headers
 
 
+def events(sport: str) -> list:
+    """A league's upcoming games (id, teams, kick-off), without prices. This
+    request is free: it costs no credits. [] without a key."""
+    key = api_key()
+    if not key:
+        return []
+    body, _ = _get(f"sports/{sport}/events", {"apiKey": key})
+    return body if isinstance(body, list) else []
+
+
 # ----------------------------------------------------------------- parsing
 def _prices(bookmaker: dict, home: str, away: str) -> dict[str, float]:
     """One bookmaker's prices in the app's market names (1/X/2, Over/Under x)."""
