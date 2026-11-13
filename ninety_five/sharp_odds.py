@@ -40,11 +40,11 @@ from .import_odds import find_match
 BASE_URL = "https://api.the-odds-api.com/v4"
 KEY_NAME = "ODDS_API_KEY"
 
-# Board competition -> The Odds API sport key. The Championship (England 2)
-# and the Conference League are not covered.
+# Board competition -> The Odds API sport key. The Conference League is not covered.
 SPORTS = {
     "England": "soccer_epl",
     "England 1": "soccer_epl",
+    "England 2": "soccer_efl_champ",
     "England 3": "soccer_england_league1",
     "England 4": "soccer_england_league2",
     "FA Cup": "soccer_fa_cup",

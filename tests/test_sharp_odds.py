@@ -53,7 +53,7 @@ def test_allowance_spreads_credits_over_the_rest_of_the_month():
 def test_due_sports_soonest_first_within_horizon_and_gap():
     rows = [_row(comp="Germany 2", kickoff="2026-11-08T12:00:00+00:00"),
             _row(comp="England", kickoff="2026-11-07T15:00:00+00:00"),
-            _row(comp="England 2", kickoff="2026-11-07T15:00:00+00:00"),       # not covered
+            _row(comp="Conference League", kickoff="2026-11-07T15:00:00+00:00"),  # not covered
             _row(comp="Spain", kickoff="2026-11-10T20:00:00+00:00"),           # beyond 48 h
             _row(comp="Italy", kickoff="2026-11-07T18:00:00+00:00")]           # fetched 2 h ago
     due = sharp_odds.due_sports(rows, NOW, {"soccer_italy_serie_a": "2026-11-07T06:00:00+00:00",
@@ -152,3 +152,10 @@ def test_uefa_nations_league_internationals_are_fetched_friendlies_are_not():
     assert sharp_odds.due_sports(rows, now, {}) == ["soccer_uefa_nations_league"]
     event = {"home_team": "Denmark", "away_team": "Spain", "commence_time": soon}
     assert [r["home"] for r, _ in sharp_odds.match_events([event], rows, "soccer_uefa_nations_league")] == ["Denmark"]
+
+
+def test_championship_is_fetched():
+    from ninety_five import sharp_odds
+    now = pd.Timestamp("2026-11-20T08:00:00Z")
+    rows = [{"competition": "England 2", "kickoff": "2026-11-21T12:30:00+00:00", "home": "Norwich", "away": "Cardiff"}]
+    assert sharp_odds.due_sports(rows, now, {}) == ["soccer_efl_champ"]
